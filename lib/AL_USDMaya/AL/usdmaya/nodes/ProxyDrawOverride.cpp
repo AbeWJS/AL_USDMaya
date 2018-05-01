@@ -26,6 +26,7 @@
 #include "maya/MDrawContext.h"
 #include "maya/MPoint.h"
 #include "maya/M3dView.h"
+#include "maya/MPointArray.h"
 
 namespace AL {
 namespace usdmaya {
@@ -398,6 +399,450 @@ ProxyShape* ProxyDrawOverride::getShape(const MDagPath& objPath)
     return 0;
   }
   return static_cast<ProxyShape*>(dnNode.userNode());
+}
+
+
+
+//////////////
+
+//----------------------------------------------------------------------------------------------------------------------
+class ProxyShapeSelectionHelper
+{
+public:
+
+    static SdfPath path_ting(const SdfPath& a, const SdfPath& b, const int c)
+    {
+        m_paths.push_back(a);
+        return a;
+    }
+    static SdfPathVector m_paths;
+};
+
+bool ProxyDrawOverride::wantUserSelection() const {
+    return true;
+}
+
+bool ProxyDrawOverride::userSelect(
+    const MHWRender::MSelectionInfo& selectInfo,
+    const MHWRender::MDrawContext& context,
+    const MDagPath& objPath,
+    const MUserData* data,
+    MSelectionList& selectionList,
+    MPointArray& worldSpaceHitPts) {
+
+      TF_DEBUG(ALUSDMAYA_DRAW).Msg("ProxyShapeUI::select");
+
+  float clearCol[4];
+  glGetFloatv(GL_COLOR_CLEAR_VALUE, clearCol);
+
+//  M3dView view = selectInfo.view();
+
+  MSelectionMask objectsMask(ProxyShape::s_selectionMaskName);
+
+  // selectable() takes MSelectionMask&, not const MSelectionMask.  :(.
+  if(!selectInfo.selectable(objectsMask))
+    return false;
+
+  int view_x, view_y, view_w, view_h;
+  context.getViewportDimensions(view_x, view_y, view_w, view_h);
+
+  unsigned int sel_x, sel_y, sel_w, sel_h;
+  selectInfo.selectRect(sel_x, sel_y, sel_w, sel_h);
+
+  double fx = 1.0 / sel_w;
+  double fy = 1.0 / sel_h;
+  double center_x = sel_x + sel_w * 0.5;
+  double center_y = sel_y + sel_h * 0.5;
+  
+  MMatrix selectMatrix;
+  selectMatrix.setToIdentity();
+  selectMatrix.matrix[0][0] = fx * view_w;
+  selectMatrix.matrix[1][1] = fy * view_h;
+  selectMatrix.matrix[3][0] = fx * (view_w - 2.0 * center_x);
+  selectMatrix.matrix[3][1] = fy * (view_h - 2.0 * center_y);
+
+
+  //MDagPath selectPath = selectInfo.selectPath();
+  MDagPath selectPath = objPath;
+  MMatrix invMatrix = selectPath.inclusiveMatrixInverse();
+
+  UsdImagingGLEngine::RenderParams params;
+  MMatrix viewMatrix, projectionMatrix;
+  GfMatrix4d worldToLocalSpace(invMatrix.matrix);
+
+  viewMatrix = context.getMatrix(MHWRender::MFrameContext::kViewMtx);
+  projectionMatrix = context.getMatrix(MHWRender::MFrameContext::kProjectionMtx);
+
+  projectionMatrix = projectionMatrix * selectMatrix;
+
+//  GLuint glHitRecord;
+//  view.beginSelect(&glHitRecord, 1);
+//  glGetDoublev(GL_MODELVIEW_MATRIX, viewMatrix[0]);
+//  glGetDoublev(GL_PROJECTION_MATRIX, projectionMatrix[0]);
+//  view.endSelect();
+        // NOT USED AT ALL
+
+  // new
+  MFnDagNode fn(objPath);
+  AL::usdmaya::nodes::ProxyShape* proxyShape = (AL::usdmaya::nodes::ProxyShape*)fn.userNode();
+  //auto* proxyShape = static_cast<ProxyShape*>(surfaceShape());
+  //end
+
+  auto engine = proxyShape->engine();
+  proxyShape->m_pleaseIgnoreSelection = true;
+
+  UsdPrim root = proxyShape->getUsdStage()->GetPseudoRoot();
+
+  UsdImagingGLEngine::HitBatch hitBatch;
+  SdfPathVector rootPath;
+  rootPath.push_back(root.GetPath());
+
+  int resolution = 10;
+  MGlobal::getOptionVarValue("AL_usdmaya_selectResolution", resolution);
+  if (resolution < 10) { resolution = 10; }
+  if (resolution > 1024) { resolution = 1024; }
+
+  bool hitSelected = engine->TestIntersectionBatch(
+          GfMatrix4d(viewMatrix.matrix),
+          GfMatrix4d(projectionMatrix.matrix),
+          worldToLocalSpace,
+          rootPath,
+          params,
+          resolution,
+          ProxyShapeSelectionHelper::path_ting,
+          &hitBatch);
+
+  auto selected = false;
+
+  auto removeVariantFromPath = [] (const SdfPath& path) -> SdfPath {
+      std::string pathStr = path.GetText();
+
+      // I'm not entirely sure about this, but it would appear that the returned string here has the variant name
+      // tacked onto the end?
+      size_t dot_location = pathStr.find_last_of('.');
+      if(dot_location != std::string::npos) {
+        pathStr = pathStr.substr(0, dot_location);
+      }
+
+      return SdfPath(pathStr);
+  };
+
+  auto getHitPath = [&engine, &removeVariantFromPath] (const UsdImagingGLEngine::HitBatch::const_reference& it) -> SdfPath {
+      const UsdImagingGLEngine::HitInfo& hit = it.second;
+      auto path = engine->GetPrimPathFromInstanceIndex(it.first, hit.hitInstanceIndex);
+      if (!path.IsEmpty())
+      {
+        return path;
+      }
+      return removeVariantFromPath(it.first);
+  };
+
+
+  auto addSelection = [&hitBatch, &selectInfo, &selectionList,
+      &worldSpaceHitPts, &objectsMask, &selected, proxyShape,
+      &removeVariantFromPath] (const MString& command) {
+      selected = true;
+      MStringArray nodes;
+      MGlobal::executeCommand(command, nodes, false, true);
+
+      // If the selection is in a single selection mode, we don't know if your mesh
+      // will be the actual final selection, because we can't make sure this is going to
+      // be called the last. So we are returning a deferred command here, that'll run last.
+      // That'll check if the mesh is still selected, and run an internal deselect command on that.
+      const auto singleSelection = selectInfo.singleSelection();
+
+      uint32_t i = 0;
+      for(auto it = hitBatch.begin(), e = hitBatch.end(); it != e; ++it, ++i)
+      {
+        auto obj = proxyShape->findRequiredPath(removeVariantFromPath(it->first));
+        if (obj != MObject::kNullObj) {
+          //MSelectionList sl;
+          MFnDagNode dagNode(obj);
+          MDagPath dg;
+          dagNode.getPath(dg);
+          //sl.add(dg);
+          const double* d = it->second.worldSpaceHitPoint.GetArray();
+          //selectInfo.addSelection(sl, MPoint(d[0], d[1], d[2], 1.0), selectionList, worldSpaceSelectPoints, objectsMask, false);
+
+          selectionList.add(dg);
+          worldSpaceHitPts.append(MPoint(d[0], d[1], d[2], 1.0));
+
+        }
+      }
+  };
+
+  // Currently we have two approaches to selection. One method works with undo (but does not
+  // play nicely with maya geometry). The second method doesn't work with undo, but does play
+  // nicely with maya geometry.
+  const int selectionMode = MGlobal::optionVarIntValue("AL_usdmaya_selectMode");
+  if(1 == selectionMode)
+  {
+    if(hitSelected)
+    {
+      int mods;
+      MString cmd = "getModifiers";
+      MGlobal::executeCommand(cmd, mods);
+
+      bool shiftHeld = (mods % 2);
+      bool ctrlHeld = (mods / 4 % 2);
+      MGlobal::ListAdjustment mode = MGlobal::kReplaceList;
+      if(shiftHeld && ctrlHeld)
+        mode = MGlobal::kAddToList;
+      else
+      if(ctrlHeld)
+        mode = MGlobal::kRemoveFromList;
+      else
+      if(shiftHeld)
+        mode = MGlobal::kXORWithList;
+
+      MString command = "AL_usdmaya_ProxyShapeSelect";
+      switch(mode)
+      {
+      case MGlobal::kReplaceList: command += " -r"; break;
+      case MGlobal::kRemoveFromList: command += " -d"; break;
+      case MGlobal::kXORWithList: command += " -tgl"; break;
+      case MGlobal::kAddToList: command += " -a"; break;
+      case MGlobal::kAddToHeadOfList: /* should never get here */ break;
+      }
+
+      for(auto it = hitBatch.begin(), e = hitBatch.end(); it != e; ++it)
+      {
+        auto path = getHitPath(*it);
+        command += " -pp \"";
+        command += path.GetText();
+        command += "\"";
+      }
+
+      MFnDependencyNode fn(proxyShape->thisMObject());
+      command += " \"";
+      command += fn.name();
+      command += "\"";
+      MGlobal::executeCommandOnIdle(command, false);
+    }
+    else
+    {
+      MString command = "AL_usdmaya_ProxyShapeSelect -cl ";
+      MFnDependencyNode fn(proxyShape->thisMObject());
+      command += " \"";
+      command += fn.name();
+      command += "\"";
+      MGlobal::executeCommandOnIdle(command, false);
+    }
+  }
+  else
+  {
+    int mods;
+    MString cmd = "getModifiers";
+    MGlobal::executeCommand(cmd, mods);
+    
+    bool shiftHeld = (mods % 2);
+    bool ctrlHeld = (mods / 4 % 2);
+    MGlobal::ListAdjustment mode = MGlobal::kReplaceList;
+    if(shiftHeld && ctrlHeld)
+      mode = MGlobal::kAddToList;
+    else
+    if(ctrlHeld)
+      mode = MGlobal::kRemoveFromList;
+    else
+    if(shiftHeld)
+      mode = MGlobal::kXORWithList;
+
+    SdfPathVector paths;
+    if (!hitBatch.empty()) {
+      paths.reserve(hitBatch.size());
+
+      auto addHit = [&engine, &paths, &getHitPath](const UsdImagingGLEngine::HitBatch::const_reference& it) {
+        paths.push_back(getHitPath(it));
+      };
+
+      // Do to the inaccuracies in the selection method in gl engine
+      // we still need to find the closest selection.
+      // Around the edges it often selects two or more prims.
+      if (selectInfo.singleSelection()) {
+        auto closestHit = hitBatch.cbegin();
+
+        if (hitBatch.size() > 1) {
+          MDagPath cameraPath;
+          
+          //selectInfo.view().getCamera(cameraPath);
+          cameraPath = context.getCurrentCameraPath();
+          
+          const auto cameraPoint = cameraPath.inclusiveMatrix() * MPoint(0.0, 0.0, 0.0, 1.0);
+          auto distanceToCameraSq = [&cameraPoint] (const UsdImagingGLEngine::HitBatch::const_reference& it) -> double {
+              const auto dx = cameraPoint.x - it.second.worldSpaceHitPoint[0];
+              const auto dy = cameraPoint.y - it.second.worldSpaceHitPoint[1];
+              const auto dz = cameraPoint.z - it.second.worldSpaceHitPoint[2];
+              return dx * dx + dy * dy + dz * dz;
+          };
+
+          auto closestDistance = distanceToCameraSq(*closestHit);
+          for (auto it = ++hitBatch.cbegin(), itEnd = hitBatch.cend(); it != itEnd; ++it) {
+            const auto currentDistance = distanceToCameraSq(*it);
+            if (currentDistance < closestDistance) {
+              closestDistance = currentDistance;
+              closestHit = it;
+            }
+          }
+        }
+        addHit(*closestHit);
+      } else {
+        for (const auto& it : hitBatch) {
+          addHit(it);
+        }
+      }
+    }
+
+    switch(mode)
+    {
+    case MGlobal::kReplaceList:
+      {
+        MString command;
+        if(!proxyShape->selectedPaths().empty())
+        {
+          command = "AL_usdmaya_ProxyShapeSelect -i -cl ";
+          MFnDependencyNode fn(proxyShape->thisMObject());
+          command += " \"";
+          command += fn.name();
+          command += "\";";
+        }
+
+        if(!paths.empty())
+        {
+          command += "AL_usdmaya_ProxyShapeSelect -i -a ";
+          for(const auto& it : paths)
+          {
+            command += " -pp \"";
+            command += it.GetText();
+            command += "\"";
+          }
+          MFnDependencyNode fn(proxyShape->thisMObject());
+          command += " \"";
+          command += fn.name();
+          command += "\"";
+
+        }
+
+        if(command.length() > 0) {
+          addSelection(command);
+        }
+      }
+      break;
+
+    case MGlobal::kAddToHeadOfList:
+    case MGlobal::kAddToList:
+      {
+        MString command;
+        if(paths.size())
+        {
+          command = "AL_usdmaya_ProxyShapeSelect -i -a ";
+          for(auto it : paths)
+          {
+            command += " -pp \"";
+            command += it.GetText();
+            command += "\"";
+          }
+          MFnDependencyNode fn(proxyShape->thisMObject());
+          command += " \"";
+          command += fn.name();
+          command += "\"";
+        }
+
+        if(command.length() > 0) {
+          selected = true;
+          addSelection(command);
+        }
+      }
+      break;
+
+    case MGlobal::kRemoveFromList:
+      {
+        if(!proxyShape->selectedPaths().empty() && paths.size())
+        {
+          MString command = "AL_usdmaya_ProxyShapeSelect -d ";
+          for(auto it : paths)
+          {
+            command += " -pp \"";
+            command += it.GetText();
+            command += "\"";
+          }
+          MFnDependencyNode fn(proxyShape->thisMObject());
+          command += " \"";
+          command += fn.name();
+          command += "\"";
+          MGlobal::executeCommandOnIdle(command, false);
+        }
+      }
+      break;
+
+    case MGlobal::kXORWithList:
+      {
+        auto& slpaths = proxyShape->selectedPaths();
+        bool hasSelectedItems = false;
+        bool hasDeletedItems = false;
+
+        MString selectcommand = "AL_usdmaya_ProxyShapeSelect -i -a ";
+        MString deselectcommand = "AL_usdmaya_ProxyShapeSelect -d ";
+        for(auto it : paths)
+        {
+          bool flag = false;
+          for(auto sit : slpaths)
+          {
+            if(sit == it)
+            {
+              flag = true;
+              break;
+            }
+          }
+          if(flag)
+          {
+            deselectcommand += " -pp \"";
+            deselectcommand += it.GetText();
+            deselectcommand += "\"";
+            hasDeletedItems = true;
+          }
+          else
+          {
+            selectcommand += " -pp \"";
+            selectcommand += it.GetText();
+            selectcommand += "\"";
+            hasSelectedItems = true;
+          }
+        }
+        MFnDependencyNode fn(proxyShape->thisMObject());
+        selectcommand += " \"";
+        selectcommand += fn.name();
+        selectcommand += "\"";
+        deselectcommand += " \"";
+        deselectcommand += fn.name();
+        deselectcommand += "\"";
+
+        if(hasSelectedItems) {
+          addSelection(selectcommand);
+        }
+
+        if(hasDeletedItems) {
+          MGlobal::executeCommandOnIdle(deselectcommand, false);
+        }
+      }
+      break;
+    }
+
+    MString final_command = "AL_usdmaya_ProxyShapePostSelect \"";
+    MFnDependencyNode fn(proxyShape->thisMObject());
+    final_command += fn.name();
+    final_command += "\"";
+    proxyShape->setChangedSelectionState(true);
+    MGlobal::executeCommandOnIdle(final_command, false);
+  }
+
+  ProxyShapeSelectionHelper::m_paths.clear();
+
+  // restore clear colour
+  glClearColor(clearCol[0], clearCol[1], clearCol[2], clearCol[3]);
+
+  return selected;
+
+    return true;
 }
 
 //----------------------------------------------------------------------------------------------------------------------

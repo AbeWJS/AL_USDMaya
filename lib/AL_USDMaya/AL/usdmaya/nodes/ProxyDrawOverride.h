@@ -23,6 +23,8 @@
 #include "pxr/pxr.h"
 #include "pxr/usdImaging/usdImaging/version.h"
 
+#include "maya/MSelectionContext.h"
+
 #include "AL/usd/utils/ForwardDeclares.h"
 #if (USD_IMAGING_API_VERSION >= 7)
 # include "pxr/usdImaging/usdImagingGL/hdEngine.h"
@@ -111,7 +113,17 @@ public:
   /// \return MHWRender::kOpenGL | MHWRender::kOpenGLCoreProfile
   MHWRender::DrawAPI supportedDrawAPIs() const override
     { return MHWRender::kOpenGL | MHWRender::kOpenGLCoreProfile; }
+  
+  bool wantUserSelection() const override;
 
+  bool userSelect(
+      const MHWRender::MSelectionInfo& selectInfo,
+      const MHWRender::MDrawContext& context,
+      const MDagPath& objPath,
+      const MUserData* data,
+      MSelectionList& selectionList,
+      MPointArray& worldSpaceHitPts) override;
+      
 #if MAYA_API_VERSION >= 201700
   /// \brief  ensure this draw override participates in post fx
   /// \return false
