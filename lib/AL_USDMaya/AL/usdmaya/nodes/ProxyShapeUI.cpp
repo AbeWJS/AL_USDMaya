@@ -33,6 +33,7 @@
 #include "maya/MPointArray.h"
 
 #if defined(WANT_UFE_BUILD)
+#include "AL/usdmaya/TypeIDs.h"
 #include "pxr/base/arch/env.h"
 #include "ufe/hierarchyHandler.h"
 #include "ufe/sceneItem.h"
