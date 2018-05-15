@@ -32,6 +32,14 @@
 #include "maya/MObjectArray.h"
 #include "maya/MPointArray.h"
 
+#include "pxr/base/arch/env.h"
+#if defined(WANT_UFE_BUILD)
+#include "ufe/hierarchyHandler.h"
+#include "ufe/sceneItem.h"
+#include "ufe/runTimeMgr.h"
+#include "ufe/globalSelection.h"
+#include "ufe/observableSelection.h"
+#endif
 
 namespace AL {
 namespace usdmaya {
@@ -263,60 +271,76 @@ SdfPathVector ProxyShapeSelectionHelper::m_paths;
 //----------------------------------------------------------------------------------------------------------------------
 bool ProxyShapeUI::select(MSelectInfo& selectInfo, MSelectionList& selectionList, MPointArray& worldSpaceSelectPoints) const
 {
-  TF_DEBUG(ALUSDMAYA_DRAW).Msg("ProxyShapeUI::select");
+    TF_DEBUG(ALUSDMAYA_DRAW).Msg("ProxyShapeUI::select");
 
-  float clearCol[4];
-  glGetFloatv(GL_COLOR_CLEAR_VALUE, clearCol);
+    float clearCol[4];
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, clearCol);
 
-  M3dView view = selectInfo.view();
+    M3dView view = selectInfo.view();
 
-  MSelectionMask objectsMask(ProxyShape::s_selectionMaskName);
+    MSelectionMask objectsMask(ProxyShape::s_selectionMaskName);
 
-  // selectable() takes MSelectionMask&, not const MSelectionMask.  :(.
-  if(!selectInfo.selectable(objectsMask))
-    return false;
+    // selectable() takes MSelectionMask&, not const MSelectionMask.  :(.
+    if (!selectInfo.selectable(objectsMask))
+        return false;
 
-  MDagPath selectPath = selectInfo.selectPath();
-  MMatrix invMatrix = selectPath.inclusiveMatrixInverse();
+    MDagPath selectPath = selectInfo.selectPath();
+    MMatrix invMatrix = selectPath.inclusiveMatrixInverse();
 
-  UsdImagingGLEngine::RenderParams params;
-  MMatrix viewMatrix, projectionMatrix;
-  GfMatrix4d worldToLocalSpace(invMatrix.matrix);
+    UsdImagingGLEngine::RenderParams params;
+    MMatrix viewMatrix, projectionMatrix;
+    GfMatrix4d worldToLocalSpace(invMatrix.matrix);
 
-  GLuint glHitRecord;
-  view.beginSelect(&glHitRecord, 1);
-  glGetDoublev(GL_MODELVIEW_MATRIX, viewMatrix[0]);
-  glGetDoublev(GL_PROJECTION_MATRIX, projectionMatrix[0]);
-  view.endSelect();
+    GLuint glHitRecord;
+    view.beginSelect(&glHitRecord, 1);
+    glGetDoublev(GL_MODELVIEW_MATRIX, viewMatrix[0]);
+    glGetDoublev(GL_PROJECTION_MATRIX, projectionMatrix[0]);
+    view.endSelect();
 
-  auto* proxyShape = static_cast<ProxyShape*>(surfaceShape());
-  auto engine = proxyShape->engine();
-  proxyShape->m_pleaseIgnoreSelection = true;
+    auto* proxyShape = static_cast<ProxyShape*>(surfaceShape());
+    auto engine = proxyShape->engine();
+    proxyShape->m_pleaseIgnoreSelection = true;
 
-  UsdPrim root = proxyShape->getUsdStage()->GetPseudoRoot();
+    UsdPrim root = proxyShape->getUsdStage()->GetPseudoRoot();
 
-  UsdImagingGLEngine::HitBatch hitBatch;
-  SdfPathVector rootPath;
-  rootPath.push_back(root.GetPath());
+    UsdImagingGLEngine::HitBatch hitBatch;
+    SdfPathVector rootPath;
+    rootPath.push_back(root.GetPath());
 
-  int resolution = 10;
-  MGlobal::getOptionVarValue("AL_usdmaya_selectResolution", resolution);
-  if (resolution < 10) { resolution = 10; }
-  if (resolution > 1024) { resolution = 1024; }
+    int resolution = 10;
+    MGlobal::getOptionVarValue("AL_usdmaya_selectResolution", resolution);
+    if (resolution < 10) { resolution = 10; }
+    if (resolution > 1024) { resolution = 1024; }
 
-  bool hitSelected = engine->TestIntersectionBatch(
-          GfMatrix4d(viewMatrix.matrix),
-          GfMatrix4d(projectionMatrix.matrix),
-          worldToLocalSpace,
-          rootPath,
-          params,
-          resolution,
-          ProxyShapeSelectionHelper::path_ting,
-          &hitBatch);
+    bool hitSelected = engine->TestIntersectionBatch(
+        GfMatrix4d(viewMatrix.matrix),
+        GfMatrix4d(projectionMatrix.matrix),
+        worldToLocalSpace,
+        rootPath,
+        params,
+        resolution,
+        ProxyShapeSelectionHelper::path_ting,
+        &hitBatch);
 
-  auto selected = false;
+    auto selected = false;
 
-  auto removeVariantFromPath = [] (const SdfPath& path) -> SdfPath {
+#if defined(WANT_UFE_BUILD)
+    auto pickUfePathPrim = [proxyShape](const SdfPath& path) -> SdfPath {
+        if (ArchHasEnv("MAYA_WANT_UFE_SELECTION")) {
+            // Get only Xform types for ufe selection
+            UsdPrim prim = proxyShape->getUsdStage()->GetPrimAtPath(path);
+            while (prim && prim.GetTypeName() != "Xform")
+                prim = prim.GetParent();
+            return prim.GetPath();
+        }
+        return path;
+  };
+#else
+    // Do nothing if WANT_UFE_BUILD is disabled
+    auto pickUfePathPrim = false;
+#endif
+
+  auto removeVariantFromPath = [&pickUfePathPrim] (const SdfPath& path) -> SdfPath {
       std::string pathStr = path.GetText();
 
       // I'm not entirely sure about this, but it would appear that the returned string here has the variant name
@@ -325,16 +349,24 @@ bool ProxyShapeUI::select(MSelectInfo& selectInfo, MSelectionList& selectionList
       if(dot_location != std::string::npos) {
         pathStr = pathStr.substr(0, dot_location);
       }
-
-      return SdfPath(pathStr);
+      SdfPath resultPath(pathStr);
+#if defined(WANT_UFE_BUILD)
+      return pickUfePathPrim(resultPath);
+#else
+      return resultPath;
+#endif
   };
 
-  auto getHitPath = [&engine, &removeVariantFromPath] (const UsdImagingGLEngine::HitBatch::const_reference& it) -> SdfPath {
+  auto getHitPath = [&engine, &removeVariantFromPath, &pickUfePathPrim] (const UsdImagingGLEngine::HitBatch::const_reference& it) -> SdfPath {
       const UsdImagingGLEngine::HitInfo& hit = it.second;
       auto path = engine->GetPrimPathFromInstanceIndex(it.first, hit.hitInstanceIndex);
       if (!path.IsEmpty())
       {
-        return path;
+#if defined(WANT_UFE_BUILD)
+          return pickUfePathPrim(path);
+#else
+          return path;
+#endif
       }
       return removeVariantFromPath(it.first);
   };
@@ -486,148 +518,211 @@ bool ProxyShapeUI::select(MSelectInfo& selectInfo, MSelectionList& selectionList
         }
       }
     }
+#if defined(WANT_UFE_BUILD)
+    if (ArchHasEnv("MAYA_WANT_UFE_SELECTION")) {
+        // Get the Hierarchy Handler of USD - Id = 2
+        auto handler{ Ufe::RunTimeMgr::instance().hierarchyHandler(2) };
+        if (handler == nullptr) {
+            MGlobal::displayError("USD Hierarchy handler has not been loaded - Picking is not possible");
+            return false;
+        }
 
-    switch(mode)
-    {
-    case MGlobal::kReplaceList:
-      {
-        MString command;
-        if(!proxyShape->selectedPaths().empty())
+        Ufe::Selection dstSelection; // Only used for kReplaceList
+                                     // Get the paths
+        if (paths.size())
         {
-          command = "AL_usdmaya_ProxyShapeSelect -i -cl ";
-          MFnDependencyNode fn(proxyShape->thisMObject());
-          command += " \"";
-          command += fn.name();
-          command += "\";";
-        }
-
-        if(!paths.empty())
-        {
-          command += "AL_usdmaya_ProxyShapeSelect -i -a ";
-          for(const auto& it : paths)
-          {
-            command += " -pp \"";
-            command += it.GetText();
-            command += "\"";
-          }
-          MFnDependencyNode fn(proxyShape->thisMObject());
-          command += " \"";
-          command += fn.name();
-          command += "\"";
-
-        }
-
-        if(command.length() > 0) {
-          addSelection(command);
-        }
-      }
-      break;
-
-    case MGlobal::kAddToHeadOfList:
-    case MGlobal::kAddToList:
-      {
-        MString command;
-        if(paths.size())
-        {
-          command = "AL_usdmaya_ProxyShapeSelect -i -a ";
-          for(auto it : paths)
-          {
-            command += " -pp \"";
-            command += it.GetText();
-            command += "\"";
-          }
-          MFnDependencyNode fn(proxyShape->thisMObject());
-          command += " \"";
-          command += fn.name();
-          command += "\"";
-        }
-
-        if(command.length() > 0) {
-          selected = true;
-          addSelection(command);
-        }
-      }
-      break;
-
-    case MGlobal::kRemoveFromList:
-      {
-        if(!proxyShape->selectedPaths().empty() && paths.size())
-        {
-          MString command = "AL_usdmaya_ProxyShapeSelect -d ";
-          for(auto it : paths)
-          {
-            command += " -pp \"";
-            command += it.GetText();
-            command += "\"";
-          }
-          MFnDependencyNode fn(proxyShape->thisMObject());
-          command += " \"";
-          command += fn.name();
-          command += "\"";
-          MGlobal::executeCommandOnIdle(command, false);
-        }
-      }
-      break;
-
-    case MGlobal::kXORWithList:
-      {
-        auto& slpaths = proxyShape->selectedPaths();
-        bool hasSelectedItems = false;
-        bool hasDeletedItems = false;
-
-        MString selectcommand = "AL_usdmaya_ProxyShapeSelect -i -a ";
-        MString deselectcommand = "AL_usdmaya_ProxyShapeSelect -d ";
-        for(auto it : paths)
-        {
-          bool flag = false;
-          for(auto sit : slpaths)
-          {
-            if(sit == it)
+            for (auto it : paths)
             {
-              flag = true;
-              break;
+                // Build a path segment of the USD picked object
+                Ufe::PathSegment ps_usd(it.GetText(), 2, '/');
+
+                // Create a sceneItem
+                const Ufe::SceneItem::Ptr& si{ handler->createItem(proxyShape->ufePath() + ps_usd) };
+
+                auto globalSelection = Ufe::GlobalSelection::get();
+
+                switch (mode)
+                {
+                case MGlobal::kReplaceList:
+                {
+                    // Add the sceneItem to dstSelection
+                    dstSelection.append(si);
+                }
+                break;
+                case MGlobal::kAddToList:
+                {
+                    // Add the sceneItem to global selection
+                    globalSelection->append(si);
+                }
+                break;
+                case MGlobal::kRemoveFromList:
+                {
+                    // Remove the sceneItem to global selection
+                    globalSelection->remove(si);
+                }
+                break;
+                case MGlobal::kXORWithList:
+                {
+                    if (!globalSelection->remove(si)) {
+                        globalSelection->append(si);
+                    }
+                }
+                break;
+                }
             }
-          }
-          if(flag)
-          {
-            deselectcommand += " -pp \"";
-            deselectcommand += it.GetText();
-            deselectcommand += "\"";
-            hasDeletedItems = true;
-          }
-          else
-          {
-            selectcommand += " -pp \"";
-            selectcommand += it.GetText();
-            selectcommand += "\"";
-            hasSelectedItems = true;
-          }
-        }
-        MFnDependencyNode fn(proxyShape->thisMObject());
-        selectcommand += " \"";
-        selectcommand += fn.name();
-        selectcommand += "\"";
-        deselectcommand += " \"";
-        deselectcommand += fn.name();
-        deselectcommand += "\"";
 
-        if(hasSelectedItems) {
-          addSelection(selectcommand);
+            if (mode == MGlobal::kReplaceList) {
+                // Add to Global selection
+                Ufe::GlobalSelection::get()->replaceWith(dstSelection);
+            }
         }
-
-        if(hasDeletedItems) {
-          MGlobal::executeCommandOnIdle(deselectcommand, false);
-        }
-      }
-      break;
     }
+    else {
+#endif
+        switch (mode)
+        {
+        case MGlobal::kReplaceList:
+        {
+            MString command;
+            if (!proxyShape->selectedPaths().empty())
+            {
+                command = "AL_usdmaya_ProxyShapeSelect -i -cl ";
+                MFnDependencyNode fn(proxyShape->thisMObject());
+                command += " \"";
+                command += fn.name();
+                command += "\";";
+            }
 
-    MString final_command = "AL_usdmaya_ProxyShapePostSelect \"";
-    MFnDependencyNode fn(proxyShape->thisMObject());
-    final_command += fn.name();
-    final_command += "\"";
-    proxyShape->setChangedSelectionState(true);
-    MGlobal::executeCommandOnIdle(final_command, false);
+            if (!paths.empty())
+            {
+                command += "AL_usdmaya_ProxyShapeSelect -i -a ";
+                for (const auto& it : paths)
+                {
+                    command += " -pp \"";
+                    command += it.GetText();
+                    command += "\"";
+                }
+                MFnDependencyNode fn(proxyShape->thisMObject());
+                command += " \"";
+                command += fn.name();
+                command += "\"";
+
+            }
+
+            if (command.length() > 0) {
+                addSelection(command);
+            }
+        }
+        break;
+
+        case MGlobal::kAddToHeadOfList:
+        case MGlobal::kAddToList:
+        {
+            MString command;
+            if (paths.size())
+            {
+                command = "AL_usdmaya_ProxyShapeSelect -i -a ";
+                for (auto it : paths)
+                {
+                    command += " -pp \"";
+                    command += it.GetText();
+                    command += "\"";
+                }
+                MFnDependencyNode fn(proxyShape->thisMObject());
+                command += " \"";
+                command += fn.name();
+                command += "\"";
+            }
+
+            if (command.length() > 0) {
+                selected = true;
+                addSelection(command);
+            }
+        }
+        break;
+
+        case MGlobal::kRemoveFromList:
+        {
+            if (!proxyShape->selectedPaths().empty() && paths.size())
+            {
+                MString command = "AL_usdmaya_ProxyShapeSelect -d ";
+                for (auto it : paths)
+                {
+                    command += " -pp \"";
+                    command += it.GetText();
+                    command += "\"";
+                }
+                MFnDependencyNode fn(proxyShape->thisMObject());
+                command += " \"";
+                command += fn.name();
+                command += "\"";
+                MGlobal::executeCommandOnIdle(command, false);
+            }
+        }
+        break;
+
+        case MGlobal::kXORWithList:
+        {
+            auto& slpaths = proxyShape->selectedPaths();
+            bool hasSelectedItems = false;
+            bool hasDeletedItems = false;
+
+            MString selectcommand = "AL_usdmaya_ProxyShapeSelect -i -a ";
+            MString deselectcommand = "AL_usdmaya_ProxyShapeSelect -d ";
+            for (auto it : paths)
+            {
+                bool flag = false;
+                for (auto sit : slpaths)
+                {
+                    if (sit == it)
+                    {
+                        flag = true;
+                        break;
+                    }
+                }
+                if (flag)
+                {
+                    deselectcommand += " -pp \"";
+                    deselectcommand += it.GetText();
+                    deselectcommand += "\"";
+                    hasDeletedItems = true;
+                }
+                else
+                {
+                    selectcommand += " -pp \"";
+                    selectcommand += it.GetText();
+                    selectcommand += "\"";
+                    hasSelectedItems = true;
+                }
+            }
+            MFnDependencyNode fn(proxyShape->thisMObject());
+            selectcommand += " \"";
+            selectcommand += fn.name();
+            selectcommand += "\"";
+            deselectcommand += " \"";
+            deselectcommand += fn.name();
+            deselectcommand += "\"";
+
+            if (hasSelectedItems) {
+                addSelection(selectcommand);
+            }
+
+            if (hasDeletedItems) {
+                MGlobal::executeCommandOnIdle(deselectcommand, false);
+            }
+        }
+        break;
+        }
+
+        MString final_command = "AL_usdmaya_ProxyShapePostSelect \"";
+        MFnDependencyNode fn(proxyShape->thisMObject());
+        final_command += fn.name();
+        final_command += "\"";
+        proxyShape->setChangedSelectionState(true);
+        MGlobal::executeCommandOnIdle(final_command, false);
+#if defined(WANT_UFE_BUILD)
+    } // else MAYA_WANT_UFE_SELECTION
+#endif
   }
 
   ProxyShapeSelectionHelper::m_paths.clear();
