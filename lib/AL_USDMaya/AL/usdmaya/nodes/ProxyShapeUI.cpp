@@ -32,8 +32,8 @@
 #include "maya/MObjectArray.h"
 #include "maya/MPointArray.h"
 
-#include "pxr/base/arch/env.h"
 #if defined(WANT_UFE_BUILD)
+#include "pxr/base/arch/env.h"
 #include "ufe/hierarchyHandler.h"
 #include "ufe/sceneItem.h"
 #include "ufe/runTimeMgr.h"
@@ -520,8 +520,7 @@ bool ProxyShapeUI::select(MSelectInfo& selectInfo, MSelectionList& selectionList
     }
 #if defined(WANT_UFE_BUILD)
     if (ArchHasEnv("MAYA_WANT_UFE_SELECTION")) {
-        // Get the Hierarchy Handler of USD - Id = 2
-        auto handler{ Ufe::RunTimeMgr::instance().hierarchyHandler(2) };
+        auto handler{ Ufe::RunTimeMgr::instance().hierarchyHandler(USD_UFE_RUNTIME_ID) };
         if (handler == nullptr) {
             MGlobal::displayError("USD Hierarchy handler has not been loaded - Picking is not possible");
             return false;
@@ -534,7 +533,7 @@ bool ProxyShapeUI::select(MSelectInfo& selectInfo, MSelectionList& selectionList
             for (auto it : paths)
             {
                 // Build a path segment of the USD picked object
-                Ufe::PathSegment ps_usd(it.GetText(), 2, '/');
+                Ufe::PathSegment ps_usd(it.GetText(), USD_UFE_RUNTIME_ID, USD_UFE_SEPARATOR);
 
                 // Create a sceneItem
                 const Ufe::SceneItem::Ptr& si{ handler->createItem(proxyShape->ufePath() + ps_usd) };
