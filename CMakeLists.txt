@@ -26,6 +26,16 @@ add_definitions(${_PXR_CXX_DEFINITIONS})
 
 find_package(Maya REQUIRED)
 
+if(CMAKE_WANT_UFE_BUILD)
+    set(UFE_MAJOR_VERSION 0)
+    set(UFE_MINOR_VERSION 1) 
+    message(STATUS "UFE Build Enabled")
+    message(STATUS "Using UFE version : ${UFE_MAJOR_VERSION}.${UFE_MINOR_VERSION}")
+    find_package(UFE REQUIRED)
+    include_directories(${UFE_INCLUDE_DIR})
+endif()
+
+
 include_directories(${MAYA_INCLUDE_DIRS})
 
 include_directories(${PXR_INCLUDE_DIRS})
