@@ -15,6 +15,7 @@ add_library(${TRANSLATORS_PACKAGE}
     MayaReference.cpp
     Mesh.cpp
     NurbsCurve.cpp
+    FrameRange.cpp
 )
 
 target_compile_definitions(${TRANSLATORS_PACKAGE}
@@ -58,6 +59,22 @@ set_target_properties(${TRANSLATORS_PACKAGE}
      "MFB_TRANSLATORS_PACKAGE=${TRANSLATORS_PACKAGE};MFB_ALT_TRANSLATORS_PACKAGE=${TRANSLATORS_PACKAGE}"
 )
 
+set_target_properties(${TRANSLATORS_PACKAGE}
+        PROPERTIES COMPILE_DEFINITIONS
+        "MFB_TRANSLATORS_PACKAGE=${TRANSLATORS_PACKAGE};MFB_ALT_TRANSLATORS_PACKAGE=${TRANSLATORS_PACKAGE}"
+        )
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "APPLE")
+  set(rpath "$ORIGIN")
+  if(CMAKE_INSTALL_RPATH)
+    set(rpath "${CMAKE_INSTALL_RPATH}:${rpath}")
+  endif()
+  set_target_properties(${TRANSLATORS_PACKAGE}
+          PROPERTIES INSTALL_RPATH
+          "${rpath}"
+  )
+endif()
+
 target_link_libraries(${TRANSLATORS_PACKAGE} ${DEPENDANT_LIBRARIES})
 
 install(TARGETS ${TRANSLATORS_PACKAGE}
@@ -81,4 +98,6 @@ install(FILES ${arg_PUBLIC_HEADER_FILES}
      DESTINATION ${CMAKE_INSTALL_PREFIX}/include/${DIRECTORY_PATH}
 )
 
-add_subdirectory(tests)
+if(NOT SKIP_USDMAYA_TESTS)
+  add_subdirectory(tests)
+endif()

@@ -578,8 +578,6 @@ MObject ProxyShape::makeUsdTransformChain(
     MPlug inStageData = ptrNode->inStageDataPlug();
     MPlug inTime = ptrNode->timePlug();
 
-    modifier.connect(outStage, inStageData);
-    modifier.connect(outTime, inTime);
 
     if(modifier2)
     {
@@ -600,6 +598,12 @@ MObject ProxyShape::makeUsdTransformChain(
       MPlug(node, MPxTransform::shearXY).setLocked(true);
       MPlug(node, MPxTransform::shearXZ).setLocked(true);
       MPlug(node, MPxTransform::shearYZ).setLocked(true);
+    }
+    else
+    {
+      // only connect time and stage if transform can change
+      modifier.connect(outTime, inTime);
+      modifier.connect(outStage, inStageData);
     }
 
     // set the primitive path
@@ -726,9 +730,9 @@ void ProxyShape::removeUsdTransformChain(
     auto it = m_requiredPaths.find(parentPrim);
     if(it == m_requiredPaths.end())
     {
-      return;
+      TF_DEBUG(ALUSDMAYA_SELECTION).Msg("ProxyShape -- %s path has not been found\n", path.GetText());
     }
-
+    else
     if(it->second.decRef(reason))
     {
       MObject object = it->second.node();
@@ -1010,6 +1014,7 @@ bool ProxyShape::doSelect(SelectionUndoHelper& helper, const SdfPathVector& orde
   auto stage = m_stage;
   if(!stage)
     return false;
+  triggerEvent("SelectionStarted");
 
   m_pleaseIgnoreSelection = true;
   prepSelect();
@@ -1054,6 +1059,7 @@ bool ProxyShape::doSelect(SelectionUndoHelper& helper, const SdfPathVector& orde
       if(keepPrims.empty() && insertPrims.empty())
       {
         m_pleaseIgnoreSelection = false;
+        triggerEvent("SelectionEnded");
         return false;
       }
 
@@ -1154,6 +1160,7 @@ bool ProxyShape::doSelect(SelectionUndoHelper& helper, const SdfPathVector& orde
       if(prims.empty())
       {
         m_pleaseIgnoreSelection = false;
+        triggerEvent("SelectionEnded");
         return false;
       }
 
@@ -1167,7 +1174,7 @@ bool ProxyShape::doSelect(SelectionUndoHelper& helper, const SdfPathVector& orde
           m_selectedPaths.erase(prim.GetPath());
 
           removeUsdTransformChain_internal(prim, helper.m_modifier1, ProxyShape::kSelection);
-          for(int i = 0; i < helper.m_newSelection.length(); ++i)
+          for(uint32_t i = 0; i < helper.m_newSelection.length(); ++i)
           {
             MObject obj;
             helper.m_newSelection.getDependNode(i, object);
@@ -1223,7 +1230,7 @@ bool ProxyShape::doSelect(SelectionUndoHelper& helper, const SdfPathVector& orde
         m_selectedPaths.erase(prim.GetPath());
 
         removeUsdTransformChain_internal(prim, helper.m_modifier1, ProxyShape::kSelection);
-        for(int i = 0; i < helper.m_newSelection.length(); ++i)
+        for(uint32_t i = 0; i < helper.m_newSelection.length(); ++i)
         {
           MObject obj;
           helper.m_newSelection.getDependNode(i, object);
@@ -1262,6 +1269,7 @@ bool ProxyShape::doSelect(SelectionUndoHelper& helper, const SdfPathVector& orde
   }
 
   m_pleaseIgnoreSelection = false;
+  triggerEvent("SelectionEnded");
   return true;
 }
 

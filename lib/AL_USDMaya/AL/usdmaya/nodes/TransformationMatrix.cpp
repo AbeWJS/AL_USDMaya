@@ -14,13 +14,13 @@
 // limitations under the License.
 //
 #include "AL/maya/utils/CommandGuiHelper.h"
-#include "AL/usdmaya/AttributeType.h"
 #include "AL/usdmaya/TypeIDs.h"
 #include "AL/usdmaya/DebugCodes.h"
 #include "AL/usdmaya/nodes/Transform.h"
 #include "AL/usdmaya/nodes/TransformationMatrix.h"
 
 #include "maya/MFileIO.h"
+#include "AL/usdmaya/utils/AttributeType.h"
 #include "AL/usdmaya/utils/Utils.h"
 
 PXR_NAMESPACE_USING_DIRECTIVE
@@ -28,6 +28,8 @@ PXR_NAMESPACE_USING_DIRECTIVE
 namespace AL {
 namespace usdmaya {
 namespace nodes {
+
+using AL::usdmaya::utils::UsdDataType;
 
 //----------------------------------------------------------------------------------------------------------------------
 const MTypeId TransformationMatrix::kTypeId(AL_USDMAYA_TRANSFORMATION_MATRIX);
@@ -101,7 +103,7 @@ TransformationMatrix::TransformationMatrix(const UsdPrim& prim)
 }
 
 //----------------------------------------------------------------------------------------------------------------------
-void TransformationMatrix::setPrim(const UsdPrim& prim)
+void TransformationMatrix::setPrim(const UsdPrim& prim, Transform* transformNode)
 {
   if(prim.IsValid())
   {
@@ -143,11 +145,7 @@ void TransformationMatrix::setPrim(const UsdPrim& prim)
     m_rotatePivotFromUsd = MPoint(0, 0, 0);
     m_rotatePivotTranslationFromUsd = MVector(0, 0, 0);
     m_rotateOrientationFromUsd = MQuaternion(0, 0, 0, 1.0);
-    //if(MFileIO::isReadingFile())
-    {
-      initialiseToPrim(!MFileIO::isReadingFile());
-    }
-
+    initialiseToPrim(!MFileIO::isReadingFile(), transformNode);
     MPxTransformationMatrix::scaleValue = m_scaleFromUsd;
     MPxTransformationMatrix::rotationValue = m_rotationFromUsd;
     MPxTransformationMatrix::translationValue = m_translationFromUsd;
@@ -165,7 +163,7 @@ bool TransformationMatrix::readVector(MVector& result, const UsdGeomXformOp& op,
 {
   TF_DEBUG(ALUSDMAYA_EVALUATION).Msg("TransformationMatrix::readVector\n");
   const SdfValueTypeName vtn = op.GetTypeName();
-  UsdDataType attr_type = getAttributeType(vtn);
+  UsdDataType attr_type = AL::usdmaya::utils::getAttributeType(vtn);
   switch(attr_type)
   {
   case UsdDataType::kVec3d:
@@ -237,35 +235,47 @@ bool TransformationMatrix::pushVector(const MVector& result, UsdGeomXformOp& op,
 {
   TF_DEBUG(ALUSDMAYA_EVALUATION).Msg("TransformationMatrix::pushVector %f %f %f\n%s\n", result.x, result.y, result.z, op.GetOpName().GetText());
   const SdfValueTypeName vtn = op.GetTypeName();
-  UsdDataType attr_type = getAttributeType(vtn);
+  UsdDataType attr_type = AL::usdmaya::utils::getAttributeType(vtn);
 
   switch(attr_type)
   {
   case UsdDataType::kVec3d:
     {
       GfVec3d value(result.x, result.y, result.z);
-      op.Set(value, timeCode);
+      GfVec3d oldValue;
+      op.Get(&oldValue, timeCode);
+      if(value != oldValue)
+        op.Set(value, timeCode);
     }
     break;
 
   case UsdDataType::kVec3f:
     {
       GfVec3f value(result.x, result.y, result.z);
-      op.Set(value, timeCode);
+      GfVec3f oldValue;
+      op.Get(&oldValue, timeCode);
+      if(value != oldValue)
+        op.Set(value, timeCode);
     }
     break;
 
   case UsdDataType::kVec3h:
     {
       GfVec3h value(result.x, result.y, result.z);
-      op.Set(value, timeCode);
+      GfVec3h oldValue;
+      op.Get(&oldValue, timeCode);
+      if(value != oldValue)
+        op.Set(value, timeCode);
     }
     break;
 
   case UsdDataType::kVec3i:
     {
       GfVec3i value(result.x, result.y, result.z);
-      op.Set(value, timeCode);
+      GfVec3i oldValue;
+      op.Get(&oldValue, timeCode);
+      if(value != oldValue)
+        op.Set(value, timeCode);
     }
     break;
 
@@ -281,7 +291,7 @@ bool TransformationMatrix::pushShear(const MVector& result, UsdGeomXformOp& op, 
 {
   TF_DEBUG(ALUSDMAYA_EVALUATION).Msg("TransformationMatrix::pushShear %f %f %f\n%s\n", result.x, result.y, result.z, op.GetOpName().GetText());
   const SdfValueTypeName vtn = op.GetTypeName();
-  UsdDataType attr_type = getAttributeType(vtn);
+  UsdDataType attr_type = AL::usdmaya::utils::getAttributeType(vtn);
   switch(attr_type)
   {
   case UsdDataType::kMatrix4d:
@@ -291,7 +301,10 @@ bool TransformationMatrix::pushShear(const MVector& result, UsdGeomXformOp& op, 
           result.x, 1.0,      0.0, 0.0,
           result.y, result.z, 1.0, 0.0,
           0.0,      0.0,      0.0, 1.0);
-      op.Set(m, timeCode);
+      GfMatrix4d oldValue;
+      op.Get(&oldValue, timeCode);
+      if(m != oldValue)
+        op.Set(m, timeCode);
     }
     break;
 
@@ -306,7 +319,7 @@ bool TransformationMatrix::readShear(MVector& result, const UsdGeomXformOp& op, 
 {
   TF_DEBUG(ALUSDMAYA_EVALUATION).Msg("TransformationMatrix::readShear\n");
   const SdfValueTypeName vtn = op.GetTypeName();
-  UsdDataType attr_type = getAttributeType(vtn);
+  UsdDataType attr_type = AL::usdmaya::utils::getAttributeType(vtn);
   switch(attr_type)
   {
   case UsdDataType::kMatrix4d:
@@ -335,7 +348,7 @@ bool TransformationMatrix::readPoint(MPoint& result, const UsdGeomXformOp& op, U
 {
   TF_DEBUG(ALUSDMAYA_EVALUATION).Msg("TransformationMatrix::readPoint\n");
   const SdfValueTypeName vtn = op.GetTypeName();
-  UsdDataType attr_type = getAttributeType(vtn);
+  UsdDataType attr_type = AL::usdmaya::utils::getAttributeType(vtn);
   switch(attr_type)
   {
   case UsdDataType::kVec3d:
@@ -407,7 +420,7 @@ bool TransformationMatrix::readMatrix(MMatrix& result, const UsdGeomXformOp& op,
 {
   TF_DEBUG(ALUSDMAYA_EVALUATION).Msg("TransformationMatrix::readMatrix\n");
   const SdfValueTypeName vtn = op.GetTypeName();
-  UsdDataType attr_type = getAttributeType(vtn);
+  UsdDataType attr_type = AL::usdmaya::utils::getAttributeType(vtn);
   switch(attr_type)
   {
   case UsdDataType::kMatrix4d:
@@ -418,7 +431,9 @@ bool TransformationMatrix::readMatrix(MMatrix& result, const UsdGeomXformOp& op,
       {
         return false;
       }
-      result = *(const MMatrix*)(&value);
+      auto vtemp = (const void*)&value;
+      auto mtemp = (const MMatrix*)vtemp;
+      result = *mtemp;
     }
     break;
 
@@ -434,16 +449,21 @@ bool TransformationMatrix::pushMatrix(const MMatrix& result, UsdGeomXformOp& op,
 {
   TF_DEBUG(ALUSDMAYA_EVALUATION).Msg("TransformationMatrix::pushMatrix\n");
   const SdfValueTypeName vtn = op.GetTypeName();
-  UsdDataType attr_type = getAttributeType(vtn);
+  UsdDataType attr_type = AL::usdmaya::utils::getAttributeType(vtn);
   switch(attr_type)
   {
   case UsdDataType::kMatrix4d:
     {
-      GfMatrix4d value = *(const GfMatrix4d*)(&result);
-      const bool retValue = op.Set<GfMatrix4d>(value, timeCode);
-      if (!retValue)
+      const GfMatrix4d& value = *(const GfMatrix4d*)(&result);
+      GfMatrix4d oldValue;
+      op.Get(&oldValue, timeCode);
+      if(value != oldValue)
       {
-        return false;
+        const bool retValue = op.Set<GfMatrix4d>(value, timeCode);
+        if (!retValue)
+        {
+          return false;
+        }
       }
     }
     break;
@@ -460,34 +480,46 @@ bool TransformationMatrix::pushPoint(const MPoint& result, UsdGeomXformOp& op, U
 {
   TF_DEBUG(ALUSDMAYA_EVALUATION).Msg("TransformationMatrix::pushPoint %f %f %f\n%s\n", result.x, result.y, result.z, op.GetOpName().GetText());
   const SdfValueTypeName vtn = op.GetTypeName();
-  UsdDataType attr_type = getAttributeType(vtn);
+  UsdDataType attr_type = AL::usdmaya::utils::getAttributeType(vtn);
   switch(attr_type)
   {
   case UsdDataType::kVec3d:
     {
       GfVec3d value(result.x, result.y, result.z);
-      op.Set(value, timeCode);
+      GfVec3d oldValue;
+      op.Get(&oldValue, timeCode);
+      if(value != oldValue)
+        op.Set(value, timeCode);
     }
     break;
 
   case UsdDataType::kVec3f:
     {
       GfVec3f value(result.x, result.y, result.z);
-      op.Set(value, timeCode);
+      GfVec3f oldValue;
+      op.Get(&oldValue, timeCode);
+      if(value != oldValue)
+        op.Set(value, timeCode);
     }
     break;
 
   case UsdDataType::kVec3h:
     {
       GfVec3h value(result.x, result.y, result.z);
-      op.Set(value, timeCode);
+      GfVec3h oldValue;
+      op.Get(&oldValue, timeCode);
+      if(value != oldValue)
+        op.Set(value, timeCode);
     }
     break;
 
   case UsdDataType::kVec3i:
     {
       GfVec3i value(result.x, result.y, result.z);
-      op.Set(value, timeCode);
+      GfVec3i oldValue;
+      op.Get(&oldValue, timeCode);
+      if(value != oldValue)
+        op.Set(value, timeCode);
     }
     break;
 
@@ -503,7 +535,7 @@ double TransformationMatrix::readDouble(const UsdGeomXformOp& op, UsdTimeCode ti
 {
   TF_DEBUG(ALUSDMAYA_EVALUATION).Msg("TransformationMatrix::readDouble\n");
   double result = 0;
-  UsdDataType attr_type = getAttributeType(op.GetTypeName());
+  UsdDataType attr_type = AL::usdmaya::utils::getAttributeType(op.GetTypeName());
   switch(attr_type)
   {
   case UsdDataType::kHalf:
@@ -561,30 +593,42 @@ double TransformationMatrix::readDouble(const UsdGeomXformOp& op, UsdTimeCode ti
 void TransformationMatrix::pushDouble(const double value, UsdGeomXformOp& op, UsdTimeCode timeCode)
 {
   TF_DEBUG(ALUSDMAYA_EVALUATION).Msg("TransformationMatrix::pushDouble %f\n%s\n", value, op.GetOpName().GetText());
-  UsdDataType attr_type = getAttributeType(op.GetTypeName());
+  UsdDataType attr_type = AL::usdmaya::utils::getAttributeType(op.GetTypeName());
   switch(attr_type)
   {
   case UsdDataType::kHalf:
     {
-      op.Set(GfHalf(value), timeCode);
+      GfHalf oldValue;
+      op.Get(&oldValue);
+      if(oldValue != GfHalf(value))
+        op.Set(GfHalf(value), timeCode);
     }
     break;
 
   case UsdDataType::kFloat:
     {
-      op.Set(float(value), timeCode);
+      float oldValue;
+      op.Get(&oldValue);
+      if(oldValue != float(value))
+        op.Set(float(value), timeCode);
     }
     break;
 
   case UsdDataType::kDouble:
     {
-      op.Set(double(value), timeCode);
+      double oldValue;
+      op.Get(&oldValue);
+      if(oldValue != double(value))
+        op.Set(double(value), timeCode);
     }
     break;
 
   case UsdDataType::kInt:
     {
-      op.Set(int32_t(value), timeCode);
+      int32_t oldValue;
+      op.Get(&oldValue);
+      if(oldValue != int32_t(value))
+        op.Set(int32_t(value), timeCode);
     }
     break;
 
@@ -804,7 +848,8 @@ void TransformationMatrix::initialiseToPrim(bool readFromPrim, Transform* transf
         {
           m_flags |= kAnimatedTranslation;
         }
-        if(readFromPrim) {
+        if(readFromPrim)
+        {
           internal_readVector(m_translationFromUsd, op);
           if(transformNode)
           {
@@ -819,7 +864,8 @@ void TransformationMatrix::initialiseToPrim(bool readFromPrim, Transform* transf
     case kPivot:
       {
         m_flags |= kPrimHasPivot;
-        if(readFromPrim) {
+        if(readFromPrim)
+        {
           internal_readPoint(m_scalePivotFromUsd, op);
           m_rotatePivotFromUsd = m_scalePivotFromUsd;
           if(transformNode)
@@ -913,7 +959,8 @@ void TransformationMatrix::initialiseToPrim(bool readFromPrim, Transform* transf
     case kScalePivotTranslate:
       {
         m_flags |= kPrimHasScalePivotTranslate;
-        if(readFromPrim) {
+        if(readFromPrim)
+        {
           internal_readVector(m_scalePivotTranslationFromUsd, op);
           if(transformNode)
           {
@@ -928,7 +975,8 @@ void TransformationMatrix::initialiseToPrim(bool readFromPrim, Transform* transf
     case kScalePivot:
       {
         m_flags |= kPrimHasScalePivot;
-        if(readFromPrim) {
+        if(readFromPrim)
+        {
           internal_readPoint(m_scalePivotFromUsd, op);
           if(transformNode)
           {
@@ -947,7 +995,8 @@ void TransformationMatrix::initialiseToPrim(bool readFromPrim, Transform* transf
         {
           m_flags |= kAnimatedShear;
         }
-        if(readFromPrim) {
+        if(readFromPrim)
+        {
           internal_readShear(m_shearFromUsd, op);
           if(transformNode)
           {
@@ -966,7 +1015,8 @@ void TransformationMatrix::initialiseToPrim(bool readFromPrim, Transform* transf
         {
           m_flags |= kAnimatedScale;
         }
-        if(readFromPrim) {
+        if(readFromPrim)
+        {
           internal_readVector(m_scaleFromUsd, op);
           if(transformNode)
           {
@@ -998,7 +1048,8 @@ void TransformationMatrix::initialiseToPrim(bool readFromPrim, Transform* transf
           m_flags |= kAnimatedMatrix;
         }
 
-        if(readFromPrim) {
+        if(readFromPrim)
+        {
           MMatrix m;
           internal_readMatrix(m, op);
           decomposeMatrix(m);
@@ -1876,7 +1927,9 @@ void TransformationMatrix::pushToPrim()
         if(pushPrimToMatrix())
         {
           MMatrix m = MPxTransformationMatrix::asMatrix();
-          op.Set(*(const GfMatrix4d*)&m, getTimeCode());
+          auto vtemp = (const void*)&m;
+          auto mtemp = (const GfMatrix4d*)vtemp;
+          op.Set(*mtemp, getTimeCode());
         }
       }
       break;
@@ -1989,7 +2042,9 @@ void TransformationMatrix::enableReadAnimatedValues(bool enabled)
         if(m_orderedOps[i] == kTransform)
         {
           MMatrix m = MPxTransformationMatrix::asMatrix();
-          m_xformops[i].Set(*(const GfMatrix4d*)&m, getTimeCode());
+          auto vtemp = (const void*)&m;
+          auto mtemp = (const GfMatrix4d*)vtemp;
+          m_xformops[i].Set(*mtemp, getTimeCode());
           break;
         }
       }
@@ -2051,7 +2106,9 @@ void TransformationMatrix::enablePushToPrim(bool enabled)
         if(m_orderedOps[i] == kTransform)
         {
           MMatrix m = MPxTransformationMatrix::asMatrix();
-          m_xformops[i].Set(*(const GfMatrix4d*)&m, getTimeCode());
+          auto vtemp = (const void*)&m;
+          auto mtemp = (const GfMatrix4d*)vtemp;
+          m_xformops[i].Set(*mtemp, getTimeCode());
           break;
         }
       }

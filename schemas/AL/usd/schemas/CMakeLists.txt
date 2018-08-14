@@ -66,13 +66,17 @@ add_library(${SCHEMAS_PACKAGE}
     SHARED
     ModelAPI.cpp
     MayaReference.cpp
+    FrameRange.cpp
     tokens.cpp
     ${CMAKE_CURRENT_BINARY_DIR}/ModuleDeps.cpp
 )
 
-set_target_properties(${SCHEMAS_PACKAGE}
-    PROPERTIES COMPILE_DEFINITIONS 
-        "MFB_PACKAGE_NAME=${SCHEMAS_PACKAGE};MFB_ALT_PACKAGE_NAME=${SCHEMAS_PACKAGE};MFB_PACKAGE_MODULE=${SCHEMAS_PYTHON_MODULE}"
+target_compile_definitions(${SCHEMAS_PACKAGE}
+    PRIVATE
+        MFB_PACKAGE_NAME=${SCHEMAS_PACKAGE}
+        MFB_ALT_PACKAGE_NAME=${SCHEMAS_PACKAGE}
+        MFB_PACKAGE_MODULE=${SCHEMAS_PYTHON_MODULE}
+        AL_USDMAYASCHEMAS_EXPORTS
 )
 
 target_link_libraries(${SCHEMAS_PACKAGE} ${DEPENDANT_LIBRARIES})
@@ -100,6 +104,7 @@ add_library(${SCHEMAS_PYTHON_PACKAGE}
     wrapModelAPI.cpp
     wrapMayaReference.cpp
     wrapTokens.cpp
+    wrapFrameRange.cpp
 )
 
 target_compile_definitions(${SCHEMAS_PYTHON_PACKAGE}
@@ -184,6 +189,7 @@ install(
     FILES
         ModelAPI.h
         MayaReference.h
+        FrameRange.h
         api.h
         tokens.h
     DESTINATION
@@ -219,4 +225,6 @@ install(
 
 ####################################################################################################
 
-add_subdirectory(tests)
+if(NOT SKIP_USDMAYA_TESTS)
+    add_subdirectory(tests)
+endif()

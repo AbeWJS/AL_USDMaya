@@ -316,7 +316,7 @@ public:
   /// display guide - sets shape to display geometry of purpose "guide". See <a href="https://github.com/PixarAnimationStudios/USD/blob/95eef7c9a6662a5362dfc312a186f50c58e27ecd/pxr/usd/lib/usdGeom/imageable.h#L165">imageable.h</a>
   AL_DECL_ATTRIBUTE(displayGuides);
 
-  /// display render guide - sets hape to display geometry of purpose "render. See <a href="https://github.com/PixarAnimationStudios/USD/blob/95eef7c9a6662a5362dfc312a186f50c58e27ecd/pxr/usd/lib/usdGeom/imageable.h#L165">imageable.h</a>
+  /// display render guide - sets hape to display geometry of purpose "render". See <a href="https://github.com/PixarAnimationStudios/USD/blob/95eef7c9a6662a5362dfc312a186f50c58e27ecd/pxr/usd/lib/usdGeom/imageable.h#L165">imageable.h</a>
   AL_DECL_ATTRIBUTE(displayRenderGuides);
 
   /// Connection to any layer DG nodes
@@ -370,9 +370,6 @@ public:
 
   /// Excluded geometry that has been explicitly translated
   AL_DECL_ATTRIBUTE(excludedTranslatedGeometry);
-
-  /// Hydra renderer plugin used for rendering (not storable)
-  AL_DECL_ATTRIBUTE(rendererPlugin);
 
   /// Cache ID of the currently loaded stage)
   AL_DECL_ATTRIBUTE(stageCacheId);
@@ -823,19 +820,18 @@ public:
 
   /// \brief Translates prims at the specified paths, the operation conducted by the translator depends on
   ///        which list you populate.
-  /// \param importPaths paths you wish to import
+  /// \param importPrims array of prims you wish to import
   /// \param teardownPaths paths you wish to teardown
   /// \param param are flags which direct the translation of the prims
   AL_USDMAYA_PUBLIC
   void translatePrimsIntoMaya(
       const AL::usd::utils::UsdPrimVector& importPrims,
-      const SdfPathVector& teardownPrims,
+      const SdfPathVector& teardownPaths,
       const fileio::translators::TranslatorParameters& param = fileio::translators::TranslatorParameters());
 
-  /// \brief Breaks a comma separated string up into a SdfPath Vector
-  /// \param importPaths paths you wish to import
-  /// \param teardownPaths paths you wish to teardown
-  /// \param param are flags which direct the translation of the prims
+  /// \brief  Breaks a comma separated string up into a SdfPath Vector
+  /// \param  paths the comma separated list of paths
+  /// \return the separated list of paths
   AL_USDMAYA_PUBLIC
   SdfPathVector getPrimPathsFromCommaJoinedString(const MString &paths) const;
 
@@ -1030,8 +1026,8 @@ private:
 
   mutable std::map<UsdTimeCode, MBoundingBox> m_boundingBoxCache;
   AL::event::CallbackId m_beforeSaveSceneId = -1;
-  MCallbackId m_attributeChanged = -1;
-  MCallbackId m_onSelectionChanged = -1;
+  MCallbackId m_attributeChanged = 0;
+  MCallbackId m_onSelectionChanged = 0;
   SdfPathVector m_excludedGeometry;
   SdfPathVector m_excludedTaggedGeometry;
   SdfPathSet m_lockTransformPrims;
@@ -1046,7 +1042,7 @@ private:
   fileio::translators::TranslatorManufacture m_translatorManufacture;
   SdfPath m_changedPath;
   SdfPathVector m_variantSwitchedPrims;
-  SdfLayerHandle m_prevTargetLayer;
+  SdfLayerHandle m_prevEditTarget;
   UsdImagingGLHdEngine* m_engine = 0;
 
   uint32_t m_engineRefCount = 0;
@@ -1054,7 +1050,6 @@ private:
   bool m_drivenTransformsDirty = false;
   bool m_pleaseIgnoreSelection = false;
   bool m_hasChangedSelection = false;
-  static TfTokenVector m_rendererPlugins;
 };
 
 //----------------------------------------------------------------------------------------------------------------------

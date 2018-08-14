@@ -170,13 +170,13 @@ public:
 
   /// \brief  returns the translated prim type
   AL_USDMAYA_PUBLIC
-  virtual TfType getTranslatedType() const override
+  TfType getTranslatedType() const override
     { return m_translatedType; }
 
   /// \brief  returns the context currently being used to translate the USD prims. The context can be used to add
   ///         references to prims you have created in your translator plugins (see:
   AL_USDMAYA_PUBLIC
-  virtual TranslatorContextPtr context() const
+  TranslatorContextPtr context() const
     { return m_context; }
 
   /// \brief  Internal method used to create a new instance of a plugin translator
@@ -186,28 +186,19 @@ public:
   AL_USDMAYA_PUBLIC
   static RefPtr manufacture(const std::string& primType, TranslatorContextPtr context) = delete;
 
-  /// \brief  Internal method used to create a new instance of a plugin translator
-  /// \param  primType the type of translator to manufacture
-  /// \param  context the translation context
-  /// \return a handle to the newly created plugin translator
+  /// \brief  This method will be called prior to the tear down process taking place. This is the last chance you have
+  ///         to do any serialisation whilst all of the existing nodes are available to query.
+  /// \param  prim the prim that may be modified or deleted as a result of a variant switch
+  /// \return MS::kSuccess if all ok
   AL_USDMAYA_PUBLIC
-  virtual MStatus preTearDown(UsdPrim& prim)
-    {
-      m_isTearingDown = true;
-      return MS::kSuccess;
-    }
+  MStatus preTearDown(UsdPrim& prim) override
+    { return MS::kSuccess; }
 
   /// \brief  return the usd stage associated with this context
   /// \return the usd stage
   AL_USDMAYA_PUBLIC
   UsdStageRefPtr getUsdStage() const
     { return context()->getUsdStage(); }
-
-  /// \brief If the translator has had pretearDown called on it then this will return true.
-  /// \return true if this prim has had the pretearDown called on it.
-  AL_USDMAYA_PUBLIC
-  bool isTearingDown() const
-    { return m_isTearingDown; }
 
 protected:
 
@@ -223,8 +214,6 @@ protected:
     { m_context = context; }
 
 private:
-  bool m_isTearingDown = false;
-
   TfType m_translatedType;
   TranslatorContextPtr m_context;
 };
@@ -282,7 +271,7 @@ public:
   /// \brief  creates a new translator for a given type T
   /// \param  ctx the current translator context
   /// \return the plugin translator associated with type T
-  virtual TfRefPtr<TranslatorBase> create(TranslatorContextPtr ctx) const
+  TfRefPtr<TranslatorBase> create(TranslatorContextPtr ctx) const override
     { return T::create(ctx); }
 };
 

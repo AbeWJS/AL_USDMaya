@@ -32,6 +32,50 @@
 #include "maya/MFnDagNode.h"
 
 //----------------------------------------------------------------------------------------------------------------------
+const char* buildTempPath(const char* const filename)
+{
+  static char temp_file[512];
+  static size_t length = 0;
+
+  if(!length)
+  {
+#ifdef _WIN32
+    length = GetTempPath(512, temp_file);
+    if(temp_file[length - 1] != '\\')
+    {
+      temp_file[length++] = '\\';
+    }
+#else
+    const char* const TMPDIRs[4] = {"TMPDIR", "TMP", "TEMP", "TEMPDIR"};
+    for(int i = 0; !length && i < 4; ++i)
+    {
+      const char* const temp = getenv(TMPDIRs[i]);
+      if(temp)
+      {
+        realpath(temp, temp_file);
+        length = std::strlen(temp_file);
+        if(temp_file[length - 1] != '/')
+        {
+          temp_file[length++] = '/';
+        }
+      }
+    }
+    if(!length)
+    {
+      temp_file[0] = '/';
+      temp_file[1] = 't';
+      temp_file[2] = 'm';
+      temp_file[3] = 'p';
+      temp_file[4] = '/';
+      length = 5;
+    }
+#endif
+  }
+  std::strcpy(temp_file + length, filename);
+  return temp_file;
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 void comparePlugs(const MPlug& plugA, const MPlug& plugB, bool usdTesting)
 {
   SCOPED_TRACE(MString("plugA: ") + plugA.name() + " - plugB: " + plugB.name());
@@ -53,7 +97,7 @@ void comparePlugs(const MPlug& plugA, const MPlug& plugB, bool usdTesting)
       if(plugA.isArray())
       {
         EXPECT_EQ(plugA.numElements(), plugB.numElements());
-        for(int i = 0; i < plugA.numElements(); ++i)
+        for(uint32_t i = 0; i < plugA.numElements(); ++i)
         {
           EXPECT_NEAR(plugA.elementByLogicalIndex(i).asDouble(), plugB.elementByLogicalIndex(i).asDouble(), 1e-5f);
         }
@@ -683,7 +727,11 @@ void randomAnimatedNode(MObject node, const char* const attributeNames[], const 
   }
 }
 
-AL::usdmaya::nodes::ProxyShape* CreateMayaProxyShape(std::function<UsdStageRefPtr()> buildUsdStage, const std::string& tempPath)
+AL::usdmaya::nodes::ProxyShape* CreateMayaProxyShape(
+    std::function<UsdStageRefPtr()> buildUsdStage,
+    const std::string& tempPath,
+    MObject* shapeParent
+)
 {
   if(buildUsdStage != nullptr)
   {
@@ -694,6 +742,10 @@ AL::usdmaya::nodes::ProxyShape* CreateMayaProxyShape(std::function<UsdStageRefPt
   MFnDagNode fn;
   MObject xform = fn.create("transform");
   MObject shape = fn.create("AL_usdmaya_ProxyShape", xform);
+
+  if(shapeParent)
+    *shapeParent = shape;
+
   AL::usdmaya::nodes::ProxyShape* proxy = (AL::usdmaya::nodes::ProxyShape*)fn.userNode();
   proxy->filePathPlug().setString(tempPath.c_str());
   return proxy;
@@ -713,7 +765,7 @@ AL::usdmaya::nodes::ProxyShape* SetupProxyShapeWithMesh()
 {
   MFileIO::newFile(true);
   MGlobal::executeCommand("polySphere");
-  MString scene("/tmp/test_SceneWithMesh.usda");
+  const MString scene = buildTempPath("AL_USDMayaTests_SceneWithMesh.usda");
   MString command;
   command.format("file -force -typ \"AL usdmaya export\" -pr -ea \"^1s\"", scene.asChar());
 
@@ -731,7 +783,7 @@ AL::usdmaya::nodes::ProxyShape* SetupProxyShapeWithMultipleMeshes()
   MGlobal::executeCommand("polySphere"); // pSphere1
   MGlobal::executeCommand("polySphere"); // pSphere2
   MGlobal::executeCommand("polySphere"); // pSphere3
-  MString scene("/tmp/test_SceneWithMultipleMeshs.usda");
+  const MString scene = buildTempPath("AL_USDMayaTests_SceneWithMultipleMeshs.usda");
   MString command;
   command.format("file -force -typ \"AL usdmaya export\" -pr -ea \"^1s\"", scene.asChar());
 
