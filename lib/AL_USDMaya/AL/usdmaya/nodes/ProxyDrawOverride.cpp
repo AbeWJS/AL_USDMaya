@@ -27,6 +27,14 @@
 #include "maya/MPoint.h"
 #include "maya/M3dView.h"
 
+#if defined(WANT_UFE_BUILD)
+#include "AL/usdmaya/TypeIDs.h"
+#include "pxr/base/arch/env.h"
+#include "ufe/sceneItem.h"
+#include "ufe/globalSelection.h"
+#include "ufe/observableSelection.h"
+#endif
+
 namespace AL {
 namespace usdmaya {
 namespace nodes {
@@ -376,6 +384,37 @@ void ProxyDrawOverride::draw(const MHWRender::MDrawContext& context, const MUser
       glDepthFunc(GL_LEQUAL);
       ptr->m_engine->RenderBatch(combined, params);
     }
+
+#if defined(WANT_UFE_BUILD)
+    if (ArchHasEnv("MAYA_WANT_UFE_SELECTION"))
+    {
+		// Draw selection highlighting for all USD items in the UFE selection.
+        SdfPathVector ufePaths;
+        auto ufeSelList = Ufe::GlobalSelection::get();
+        for (const auto& sceneItem : *ufeSelList)
+        {
+            if (sceneItem->runTimeId() == USD_UFE_RUNTIME_ID)
+            {
+                const Ufe::Path& itemPath = sceneItem->path();
+                Ufe::PathSegment leaf = itemPath.getSegments().back();
+                if (leaf.runTimeId() == USD_UFE_RUNTIME_ID)
+                {
+                    SdfPath ufePath(leaf.string());
+                    ufePaths.push_back(ufePath);
+                }
+            }
+        }
+        if (!ufePaths.empty())
+        {
+            UsdImagingGLEngine::RenderParams params = ptr->m_params;
+            params.drawMode = UsdImagingGLEngine::DRAW_WIREFRAME;
+            MColor colour = M3dView::leadColor();	// Maya selection color
+            params.wireframeColor = GfVec4f(colour.r, colour.g, colour.b, 1.0f);
+            glDepthFunc(GL_LEQUAL);
+            ptr->m_engine->RenderBatch(ufePaths, params);
+        }
+    }
+#endif
 
     // HACK: Maya doesn't restore this ONE buffer binding after our override is done so we have to do it for them.
     glBindBufferBase(GL_UNIFORM_BUFFER, 4, uboBinding);
