@@ -85,7 +85,7 @@
                     }
                 }
             }, 
-            "LibraryPath": "${SCHEMAS_LIBRARY_DIR}/@CMAKE_SHARED_LIBRARY_PREFIX@@SCHEMAS_PACKAGE@@CMAKE_SHARED_LIBRARY_SUFFIX@", 
+            "LibraryPath": "${LIBRARY_LOCATION}/@CMAKE_SHARED_LIBRARY_PREFIX@@SCHEMAS_PACKAGE@@CMAKE_SHARED_LIBRARY_SUFFIX@", 
             "Name": "@SCHEMAS_PACKAGE@", 
             "ResourcePath": "resources", 
             "Root": "..", 

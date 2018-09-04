@@ -41,7 +41,7 @@ configure_file(
   )
 
 # Setup the actual plugInfo.json
-set(LIBRARY_LOCATION "../../../../lib")
+set(LIBRARY_LOCATION "../../../../../lib")
 configure_file(
   ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
   ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
@@ -83,6 +83,9 @@ install(TARGETS ${TRANSLATORS_PACKAGE}
  RUNTIME
  DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
 )
+if(MSVC)
+    install(FILES $<TARGET_PDB_FILE:${TRANSLATORS_PACKAGE}> DESTINATION ${CMAKE_INSTALL_PREFIX}/lib OPTIONAL)
+endif()
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
  DESTINATION ${CMAKE_INSTALL_PREFIX}/share/usd/plugins/${TRANSLATORS_PACKAGE}/resources

@@ -50,3 +50,6 @@ install(TARGETS
     RUNTIME
         DESTINATION plugin
 )
+if(MSVC)
+    install(FILES $<TARGET_PDB_FILE:${PXR_PACKAGE}> DESTINATION plugin OPTIONAL)
+endif()

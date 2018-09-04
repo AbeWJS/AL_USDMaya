@@ -13,10 +13,9 @@ set(
     ${CMAKE_INSTALL_PREFIX}/lib/python/${SCHEMAS_PYTHON_PATH}
 )
 
-# Bake library name
 configure_file (
-    ./plugInfo.json.in
-    ${CMAKE_CURRENT_SOURCE_DIR}/plugInfo.json
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugInfo.json.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json"
     @ONLY
 )
 
@@ -56,6 +55,18 @@ endif()
 # Usd plugin
 ####################################################################################################
 
+configure_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
+    ${CMAKE_CURRENT_BINARY_DIR}/share/usd/plugins/${SCHEMAS_PACKAGE}/resources/plugInfo.json
+)
+
+# Setup the actual plugInfo.json
+set(LIBRARY_LOCATION "../../../../../lib")
+configure_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
+  ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
+  )
+
 # Bake python module path
 configure_file (
   "${CMAKE_CURRENT_SOURCE_DIR}/ModuleDeps.cpp.in"
@@ -88,6 +99,9 @@ install(
     RUNTIME
     DESTINATION ${library_install_path}
 )
+if(MSVC)
+    install(FILES $<TARGET_PDB_FILE:${SCHEMAS_PACKAGE}> DESTINATION ${library_install_path} OPTIONAL)
+endif()
 
 ####################################################################################################
 # Python bindings
@@ -207,15 +221,14 @@ file(RELATIVE_PATH
 
 )
 
-# Bake relative path
-configure_file(
-    ./plugInfo.json
-    .
-)
-
 install(
     FILES ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
     DESTINATION ${resources_install_path}
+)
+
+#install top level plugInfo.json that includes the configured plugInfo.json
+install(CODE
+ "file(WRITE \"${CMAKE_INSTALL_PREFIX}/share/usd/plugins/plugInfo.json\" \"{\n    \\\"Includes\\\": [ \\\"*/resources/\\\" ]\n}\")"
 )
 
 install(
