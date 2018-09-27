@@ -49,7 +49,8 @@
 #include "AL/usd/utils/ForwardDeclares.h"
 
 #if defined(WANT_UFE_BUILD)
-namespace Ufe {
+#include "ufe/ufe.h"
+UFE_NS_DEF {
     class Path;
 }
 #endif

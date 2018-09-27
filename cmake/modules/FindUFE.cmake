@@ -12,6 +12,7 @@ if(APPLE)
     find_path(UFE_LIBRARY_DIR 
         libufe_${UFE_MAJOR_VERSION}_${UFE_MINOR_VERSION}.dylib
         HINTS
+            "${UFE_LIB_ROOT}"
             "${MAYA_DEVKIT_LOCATION}"
             "${MAYA_LOCATION}"
             "$ENV{MAYA_LOCATION}"
@@ -26,6 +27,7 @@ elseif(UNIX)
     find_path(UFE_LIBRARY_DIR
             libufe_${UFE_MAJOR_VERSION}_${UFE_MINOR_VERSION}.so
          HINTS
+            "${UFE_LIB_ROOT}"
             "${MAYA_DEVKIT_LOCATION}"
             "${MAYA_LOCATION}"
             "$ENV{MAYA_LOCATION}"
@@ -40,6 +42,7 @@ elseif(WIN32)
     find_path(UFE_LIBRARY_DIR
             ufe_${UFE_MAJOR_VERSION}_${UFE_MINOR_VERSION}.lib
          HINTS
+            "${UFE_LIB_ROOT}"
             "${MAYA_DEVKIT_LOCATION}"
             "${MAYA_LOCATION}"
             "$ENV{MAYA_LOCATION}"
@@ -55,18 +58,20 @@ endif()
 find_path(UFE_INCLUDE_DIR
         ufe/versionInfo.h
     HINTS
+        "${UFE_INCLUDE_ROOT}"
         "${MAYA_DEVKIT_LOCATION}"
         "${MAYA_LOCATION}"
         "$ENV{MAYA_LOCATION}"
         "${MAYA_BASE_DIR}"
     PATH_SUFFIXES
         devkit/ufe/include
+        include/
     DOC
         "UFE's headers path"
 )
 
- message(STATUS "UFE Library directory: ${UFE_LIBRARY_DIR}")
-
+message(STATUS "UFE Include directory: ${UFE_INCLUDE_DIR}")
+message(STATUS "UFE Library directory: ${UFE_LIBRARY_DIR}")
 
 foreach(UFE_LIB
     ufe_${UFE_MAJOR_VERSION}_${UFE_MINOR_VERSION})
