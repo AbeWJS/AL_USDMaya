@@ -4,13 +4,13 @@
 #
 # Variables that will be defined:
 # UFE_FOUND           Defined if a UFE installation has been detected
-# UFE_LIBRARY   Path to UFE library
+# UFE_LIBRARY         Path to UFE library
 # UFE_INCLUDE_DIR     Path to the UFE's include directories
 #
 
 if(APPLE)
     find_path(UFE_LIBRARY_DIR 
-        libufe_${UFE_MAJOR_VERSION}_${UFE_MINOR_VERSION}.dylib
+        libufe_${UFE_MAJOR_VERSION}.dylib
         HINTS
             "${UFE_LIB_ROOT}"
             "${MAYA_DEVKIT_LOCATION}"
@@ -25,7 +25,7 @@ if(APPLE)
     )
 elseif(UNIX)
     find_path(UFE_LIBRARY_DIR
-            libufe_${UFE_MAJOR_VERSION}_${UFE_MINOR_VERSION}.so
+            libufe_${UFE_MAJOR_VERSION}.so
          HINTS
             "${UFE_LIB_ROOT}"
             "${MAYA_DEVKIT_LOCATION}"
@@ -40,7 +40,7 @@ elseif(UNIX)
     )
 elseif(WIN32)
     find_path(UFE_LIBRARY_DIR
-            ufe_${UFE_MAJOR_VERSION}_${UFE_MINOR_VERSION}.lib
+            ufe_${UFE_MAJOR_VERSION}.lib
          HINTS
             "${UFE_LIB_ROOT}"
             "${MAYA_DEVKIT_LOCATION}"
@@ -74,7 +74,7 @@ message(STATUS "UFE Include directory: ${UFE_INCLUDE_DIR}")
 message(STATUS "UFE Library directory: ${UFE_LIBRARY_DIR}")
 
 foreach(UFE_LIB
-    ufe_${UFE_MAJOR_VERSION}_${UFE_MINOR_VERSION})
+    ufe_${UFE_MAJOR_VERSION})
 
     find_library(UFE_LIBRARY
         NAMES
