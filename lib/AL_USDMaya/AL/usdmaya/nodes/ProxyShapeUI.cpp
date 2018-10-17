@@ -272,7 +272,7 @@ SdfPathVector ProxyShapeSelectionHelper::m_paths;
 //----------------------------------------------------------------------------------------------------------------------
 bool ProxyShapeUI::select(MSelectInfo& selectInfo, MSelectionList& selectionList, MPointArray& worldSpaceSelectPoints) const
 {
-  TF_DEBUG(ALUSDMAYA_DRAW).Msg("ProxyShapeUI::select");
+  TF_DEBUG(ALUSDMAYA_DRAW).Msg("ProxyShapeUI::select\n");
 
   float clearCol[4];
   glGetFloatv(GL_COLOR_CLEAR_VALUE, clearCol);
