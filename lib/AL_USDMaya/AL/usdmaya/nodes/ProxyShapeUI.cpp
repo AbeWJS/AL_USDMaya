@@ -233,10 +233,8 @@ void ProxyShapeUI::draw(const MDrawRequest& request, M3dView& view) const
   #endif
 
   SdfPathVector paths(shape->selectedPaths().cbegin(), shape->selectedPaths().cend());
-  engine->SetSelected(paths);
-  engine->SetSelectionColor(GfVec4f(1.0f, 2.0f/3.0f, 0.0f, 1.0f));
-  engine->Render(shape->getRootPrim(), params);
-
+  auto style = params.drawMode;
+  auto colour = params.wireframeColor;
   if(paths.size())
   {
     MColor colour = M3dView::leadColor();
@@ -246,6 +244,12 @@ void ProxyShapeUI::draw(const MDrawRequest& request, M3dView& view) const
     engine->RenderBatch(paths, params);
     glDepthFunc(GL_LESS);
   }
+
+  params.drawMode = style;
+  params.wireframeColor = colour;
+  engine->SetSelected(paths);
+  engine->SetSelectionColor(GfVec4f(1.0f, 2.0f/3.0f, 0.0f, 1.0f));
+  engine->Render(shape->getRootPrim(), params);
 
 
   glClearColor(clearCol[0], clearCol[1], clearCol[2], clearCol[3]);

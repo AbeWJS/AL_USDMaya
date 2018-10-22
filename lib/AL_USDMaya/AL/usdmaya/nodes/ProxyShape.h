@@ -258,6 +258,7 @@ class ProxyShape
   friend struct SelectionUndoHelper;
   friend class ProxyShapeUI;
   friend class StageReloadGuard;
+  friend class ProxyDrawOverride;
 public:
 
   // returns the shape's parent transform
@@ -852,6 +853,10 @@ public:
   AL_USDMAYA_PUBLIC
   Ufe::Path ufePath() const;
 #endif
+
+  /// \brief  Returns the selection mask of the shape
+  AL_USDMAYA_PUBLIC
+  MSelectionMask getShapeSelectionMask() const override;
 
 private:
 

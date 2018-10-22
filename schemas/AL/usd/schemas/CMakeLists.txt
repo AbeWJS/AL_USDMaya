@@ -13,19 +13,18 @@ set(
     ${CMAKE_INSTALL_PREFIX}/lib/python/${SCHEMAS_PYTHON_PATH}
 )
 
+# Bake library name
 configure_file (
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugInfo.json.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json"
+    plugInfo.json.in
+    ./plugInfo.json
     @ONLY
 )
 
 list(APPEND DEPENDANT_LIBRARIES ${PYTHON_LIBRARIES} usd usdGeom)
 
 ####################################################################################################
-# Schemas generation and validation
+# Schemas generation
 ####################################################################################################
-
-if(VALIDATE_GENERATED_SCHEMAS)
 
 # Bake library name, tokens prefix and usd schemas path
 set(USD_SCHEMA_PATH usd/schema.usda)
@@ -37,11 +36,12 @@ configure_file (
 
 execute_process(
     COMMAND
-        usdGenSchema
-            ${CMAKE_CURRENT_BINARY_DIR}/schema.usda
-            .
+        python
+        ${USD_GENSCHEMA}
+        ${CMAKE_CURRENT_BINARY_DIR}/schema.usda
+        .
     WORKING_DIRECTORY
-        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_BINARY_DIR}
     RESULT_VARIABLE
         usdgen_res
 )
@@ -49,23 +49,9 @@ if(usdgen_res)
     message(FATAL_ERROR "Schemas generation failed")
 endif()
 
-endif()
-
 ####################################################################################################
 # Usd plugin
 ####################################################################################################
-
-configure_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
-    ${CMAKE_CURRENT_BINARY_DIR}/share/usd/plugins/${SCHEMAS_PACKAGE}/resources/plugInfo.json
-)
-
-# Setup the actual plugInfo.json
-set(LIBRARY_LOCATION "../../../../../lib")
-configure_file(
-  ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
-  ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
-  )
 
 # Bake python module path
 configure_file (
@@ -221,18 +207,19 @@ file(RELATIVE_PATH
 
 )
 
+# Bake relative path
+configure_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
+    .
+)
+
 install(
     FILES ${CMAKE_CURRENT_BINARY_DIR}/plugInfo.json
     DESTINATION ${resources_install_path}
 )
 
-#install top level plugInfo.json that includes the configured plugInfo.json
-install(CODE
- "file(WRITE \"${CMAKE_INSTALL_PREFIX}/share/usd/plugins/plugInfo.json\" \"{\n    \\\"Includes\\\": [ \\\"*/resources/\\\" ]\n}\")"
-)
-
 install(
-    FILES generatedSchema.usda 
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/generatedSchema.usda 
     DESTINATION ${resources_install_path}
 )
 
