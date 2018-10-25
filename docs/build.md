@@ -106,13 +106,6 @@ will force VP2 to use the "OpenGL -- Legacy" profile
 
 see [Autodesk docs](https://knowledge.autodesk.com/support/maya/learn-explore/caas/CloudHelp/cloudhelp/2017/ENU/Maya/files/GUID-4928A912-DA6C-4734-863B-AB5959DA73C9-htm.html)
 
-For selection to work, also need to set
-```
-MAYA_VP2_USE_VP1_SELECTION=1 
-```
-as mentioned here:
-http://help.autodesk.com/view/MAYAUL/2017/ENU/?guid=__files_GUID_343690A7_F76D_4CD2_A964_E10DA7B5BDF8_htm
-
 ## How to run the tests ##
 Unit tests of AL_USDMaya have been wrapped into a regular maya plugin (_AL_USDMayaTestPlugin_). Its path simply needs to be part of the MAYA_PLUG_IN_PATH environment variable and then it can be loaded.
 

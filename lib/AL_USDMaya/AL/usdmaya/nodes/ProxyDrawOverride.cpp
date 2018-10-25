@@ -33,6 +33,7 @@
 #include "AL/usdmaya/TypeIDs.h"
 #include "pxr/base/arch/env.h"
 #include "ufe/sceneItem.h"
+#include "ufe/runTimeMgr.h"
 #include "ufe/globalSelection.h"
 #include "ufe/observableSelection.h"
 #endif
@@ -721,9 +722,73 @@ bool ProxyDrawOverride::userSelect(
       }
     }
 
-    switch(mode)
+#if defined(WANT_UFE_BUILD)
+    if (ArchHasEnv("MAYA_WANT_UFE_SELECTION"))
     {
-    case MGlobal::kReplaceList:
+      // Get the Hierarchy Handler of USD - Id = 2
+      auto handler{ Ufe::RunTimeMgr::instance().hierarchyHandler(2) };
+      if (handler == nullptr)
+      {
+        MGlobal::displayError("USD Hierarchy handler has not been loaded - Picking is not possible");
+        return false;
+      }
+
+      Ufe::Selection dstSelection; // Only used for kReplaceList
+                                   // Get the paths
+      if (paths.size())
+      {
+        for (auto it : paths)
+        {
+          // Build a path segment of the USD picked object
+          Ufe::PathSegment ps_usd(it.GetText(), 2, '/');
+
+          // Create a sceneItem
+          const Ufe::SceneItem::Ptr& si{ handler->createItem(proxyShape->ufePath() + ps_usd) };
+
+          auto globalSelection = Ufe::GlobalSelection::get();
+
+          switch (mode)
+          {
+          case MGlobal::kReplaceList:
+          {
+            // Add the sceneItem to dstSelection
+            dstSelection.append(si);
+          }
+          break;
+          case MGlobal::kAddToList:
+          {
+            // Add the sceneItem to global selection
+            globalSelection->append(si);
+          }
+          break;
+          case MGlobal::kRemoveFromList:
+          {
+            // Remove the sceneItem to global selection
+            globalSelection->remove(si);
+          }
+          break;
+          case MGlobal::kXORWithList:
+          {
+            if (!globalSelection->remove(si)) {
+              globalSelection->append(si);
+            }
+          }
+          break;
+          }
+        }
+
+        if (mode == MGlobal::kReplaceList) {
+          // Add to Global selection
+          Ufe::GlobalSelection::get()->replaceWith(dstSelection);
+        }
+      }
+    }
+    else
+    {
+#endif
+      switch (mode)
+      {
+      case MGlobal::kReplaceList:
       {
         MString command;
         if(!proxyShape->selectedPaths().empty())
@@ -758,8 +823,8 @@ bool ProxyDrawOverride::userSelect(
       }
       break;
 
-    case MGlobal::kAddToHeadOfList:
-    case MGlobal::kAddToList:
+      case MGlobal::kAddToHeadOfList:
+      case MGlobal::kAddToList:
       {
         MString command;
         if(paths.size())
@@ -785,7 +850,7 @@ bool ProxyDrawOverride::userSelect(
       }
       break;
 
-    case MGlobal::kRemoveFromList:
+      case MGlobal::kRemoveFromList:
       {
         if(!proxyShape->selectedPaths().empty() && paths.size())
         {
@@ -806,7 +871,7 @@ bool ProxyDrawOverride::userSelect(
       }
       break;
 
-    case MGlobal::kXORWithList:
+      case MGlobal::kXORWithList:
       {
         auto& slpaths = proxyShape->selectedPaths();
         bool hasSelectedItems = false;
@@ -859,14 +924,17 @@ bool ProxyDrawOverride::userSelect(
         }
       }
       break;
-    }
+      }
 
-    MString final_command = "AL_usdmaya_ProxyShapePostSelect \"";
-    MFnDependencyNode fn(proxyShape->thisMObject());
-    final_command += fn.name();
-    final_command += "\"";
-    proxyShape->setChangedSelectionState(true);
-    MGlobal::executeCommandOnIdle(final_command, false);
+      MString final_command = "AL_usdmaya_ProxyShapePostSelect \"";
+      MFnDependencyNode fn(proxyShape->thisMObject());
+      final_command += fn.name();
+      final_command += "\"";
+      proxyShape->setChangedSelectionState(true);
+      MGlobal::executeCommandOnIdle(final_command, false);
+#if defined(WANT_UFE_BUILD)
+    } // else MAYA_WANT_UFE_SELECTION
+#endif
   }
 
   ProxyDrawOverrideSelectionHelper::m_paths.clear();
