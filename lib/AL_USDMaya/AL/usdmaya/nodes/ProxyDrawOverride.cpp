@@ -79,6 +79,7 @@ ProxyDrawOverride::ProxyDrawOverride(const MObject& obj)
 #else
   : MHWRender::MPxDrawOverride(obj, draw)
 #endif
+  , fSelectionListAdjustmentMode(MGlobal::kReplaceList)
 {
   TF_DEBUG(ALUSDMAYA_DRAW).Msg("ProxyDrawOverride::ProxyDrawOverride\n");
 }
@@ -493,6 +494,52 @@ SdfPathVector ProxyDrawOverrideSelectionHelper::m_paths;
 
 #if MAYA_API_VERSION >= 20190000
 //----------------------------------------------------------------------------------------------------------------------
+// Maya calls this function during the pre-filtering phase of Viewport 2.0 selection
+// in order to setup the selection context of the given DAG object.
+//
+// However, we override this function for a different purpose, i.e. to clear the
+// Ufe::GlobalSelection in advance if we are going to replace the selection list.
+// Later if the bounds of the proxy shape passes the selection region culling
+// test, userSelect() will be called and we will add new hit paths; otherwise
+// userSelect() will not be called and we can de-select USD objects.
+//
+void ProxyDrawOverride::updateSelectionGranularity(
+  const MDagPath& path,
+  MSelectionContext& selectionContext)
+{
+  // Maya determines the selection list adjustment mode by Ctrl/Shift modifiers.
+  int modifiers = 0;
+  MGlobal::executeCommand("getModifiers", modifiers);
+
+  const bool shiftHeld = (modifiers % 2);
+  const bool ctrlHeld = (modifiers / 4 % 2);
+
+  if (shiftHeld && ctrlHeld)
+  {
+    fSelectionListAdjustmentMode = MGlobal::kAddToList;
+  }
+  else if (ctrlHeld)
+  {
+    fSelectionListAdjustmentMode = MGlobal::kRemoveFromList;
+  }
+  else if (shiftHeld)
+  {
+    fSelectionListAdjustmentMode = MGlobal::kXORWithList;
+  }
+  else
+  {
+    fSelectionListAdjustmentMode = MGlobal::kReplaceList;
+
+#if defined(WANT_UFE_BUILD)
+    if (ArchHasEnv("MAYA_WANT_UFE_SELECTION"))
+    {
+      Ufe::GlobalSelection::get()->clear();
+    }
+#endif
+  }
+}
+
+//----------------------------------------------------------------------------------------------------------------------
 bool ProxyDrawOverride::userSelect(
     const MHWRender::MSelectionInfo& selectInfo,
     const MHWRender::MDrawContext& context,
@@ -602,24 +649,8 @@ bool ProxyDrawOverride::userSelect(
   {
     if(hitSelected)
     {
-      int mods;
-      MString cmd = "getModifiers";
-      MGlobal::executeCommand(cmd, mods);
-
-      bool shiftHeld = (mods % 2);
-      bool ctrlHeld = (mods / 4 % 2);
-      MGlobal::ListAdjustment mode = MGlobal::kReplaceList;
-      if(shiftHeld && ctrlHeld)
-        mode = MGlobal::kAddToList;
-      else
-      if(ctrlHeld)
-        mode = MGlobal::kRemoveFromList;
-      else
-      if(shiftHeld)
-        mode = MGlobal::kXORWithList;
-      
       MString command = "AL_usdmaya_ProxyShapeSelect";
-      switch(mode)
+      switch(fSelectionListAdjustmentMode)
       {
       case MGlobal::kReplaceList: command += " -r"; break;
       case MGlobal::kRemoveFromList: command += " -d"; break;
@@ -654,22 +685,6 @@ bool ProxyDrawOverride::userSelect(
   }
   else
   {
-    int mods;
-    MString cmd = "getModifiers";
-    MGlobal::executeCommand(cmd, mods);
-    
-    bool shiftHeld = (mods % 2);
-    bool ctrlHeld = (mods / 4 % 2);
-    MGlobal::ListAdjustment mode = MGlobal::kReplaceList;
-    if(shiftHeld && ctrlHeld)
-      mode = MGlobal::kAddToList;
-    else
-    if(ctrlHeld)
-      mode = MGlobal::kRemoveFromList;
-    else
-    if(shiftHeld)
-      mode = MGlobal::kXORWithList;
-
     SdfPathVector paths;
     if (!hitBatch.empty())
     {
@@ -733,10 +748,10 @@ bool ProxyDrawOverride::userSelect(
         return false;
       }
 
-      Ufe::Selection dstSelection; // Only used for kReplaceList
-                                   // Get the paths
       if (paths.size())
       {
+        auto globalSelection = Ufe::GlobalSelection::get();
+
         for (auto it : paths)
         {
           // Build a path segment of the USD picked object
@@ -745,48 +760,33 @@ bool ProxyDrawOverride::userSelect(
           // Create a sceneItem
           const Ufe::SceneItem::Ptr& si{ handler->createItem(proxyShape->ufePath() + ps_usd) };
 
-          auto globalSelection = Ufe::GlobalSelection::get();
-
-          switch (mode)
+          switch (fSelectionListAdjustmentMode)
           {
           case MGlobal::kReplaceList:
-          {
-            // Add the sceneItem to dstSelection
-            dstSelection.append(si);
-          }
-          break;
-          case MGlobal::kAddToList:
-          {
-            // Add the sceneItem to global selection
+            // The list has been cleared in earlier phase - updateSelectionGranularity(),
+            // therefore we can add the new hit paths directly.
             globalSelection->append(si);
-          }
-          break;
+            break;
+          case MGlobal::kAddToList:
+            globalSelection->append(si);
+            break;
           case MGlobal::kRemoveFromList:
-          {
-            // Remove the sceneItem to global selection
             globalSelection->remove(si);
-          }
-          break;
+            break;
           case MGlobal::kXORWithList:
-          {
-            if (!globalSelection->remove(si)) {
+            if (!globalSelection->remove(si))
+            {
               globalSelection->append(si);
             }
+            break;
           }
-          break;
-          }
-        }
-
-        if (mode == MGlobal::kReplaceList) {
-          // Add to Global selection
-          Ufe::GlobalSelection::get()->replaceWith(dstSelection);
         }
       }
     }
     else
     {
 #endif
-      switch (mode)
+      switch (fSelectionListAdjustmentMode)
       {
       case MGlobal::kReplaceList:
       {

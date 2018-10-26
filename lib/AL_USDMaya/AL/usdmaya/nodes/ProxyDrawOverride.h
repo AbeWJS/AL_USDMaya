@@ -17,6 +17,7 @@
 
 #include "../Api.h"
 
+#include "maya/MGlobal.h"
 #include "maya/MPxDrawOverride.h"
 #include "AL/usdmaya/ForwardDeclares.h"
 
@@ -121,8 +122,14 @@ public:
 
 private:
   static MUint64 s_lastRefreshFrameStamp;
-  
+
+  MGlobal::ListAdjustment fSelectionListAdjustmentMode;
+
 #if MAYA_API_VERSION >= 20190000
+  void updateSelectionGranularity(
+      const MDagPath& path,
+      MSelectionContext& selectionContext) override;
+
   bool wantUserSelection() const override {return true;}
   
   bool userSelect(
