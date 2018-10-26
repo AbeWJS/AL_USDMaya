@@ -386,7 +386,6 @@ void ProxyDrawOverride::draw(const MHWRender::MDrawContext& context, const MUser
 
     ptr->m_engine->SetRootTransform(GfMatrix4d(ptr->m_objPath.inclusiveMatrix().matrix));
 
-    auto view = M3dView::active3dView();
     const auto& paths1 = ptr->m_shape->selectedPaths();
     const auto& paths2 = ptr->m_shape->selectionList().paths();
     SdfPathVector combined;
@@ -549,29 +548,43 @@ bool ProxyDrawOverride::userSelect(
     MPointArray& worldSpaceHitPts)
 {
   TF_DEBUG(ALUSDMAYA_SELECTION).Msg("ProxyDrawOverride::userSelect\n");
+
   MStatus status;
-
-  M3dView view = M3dView::active3dView();
-
-  // Get view matrix
-  MMatrix viewMatrix = context.getMatrix(MHWRender::MFrameContext::kViewMtx, &status);
+  MMatrix worldViewMatrix = context.getMatrix(
+    MHWRender::MFrameContext::kWorldViewMtx, &status);
   if (status != MStatus::kSuccess) return false;
 
-  // Get projection matrix
-  MMatrix projectionMatrix = context.getMatrix(MHWRender::MFrameContext::kProjectionMtx, &status);
+  MMatrix projectionMatrix = context.getMatrix(
+    MHWRender::MFrameContext::kProjectionMtx, &status);
   if (status != MStatus::kSuccess) return false;
+
+  // Compute a pick matrix that, when it is post-multiplied with the projection
+  // matrix, will cause the picking region to fill the entire viewport for
+  // OpenGL selection.
+  {
+    int view_x, view_y, view_w, view_h;
+    context.getViewportDimensions(view_x, view_y, view_w, view_h);
+
+    unsigned int sel_x, sel_y, sel_w, sel_h;
+    selectInfo.selectRect(sel_x, sel_y, sel_w, sel_h);
+
+    double center_x = sel_x + sel_w * 0.5;
+    double center_y = sel_y + sel_h * 0.5;
+
+    MMatrix pickMatrix;
+    pickMatrix[0][0] = view_w / double(sel_w);
+    pickMatrix[1][1] = view_h / double(sel_h);
+    pickMatrix[3][0] = (view_w - 2.0 * (center_x - view_x)) / double(sel_w);
+    pickMatrix[3][1] = (view_h - 2.0 * (center_y - view_y)) / double(sel_h);
+
+    projectionMatrix *= pickMatrix;
+  }
 
   // Get world to local matrix
   MMatrix invMatrix = objPath.inclusiveMatrixInverse();
   GfMatrix4d worldToLocalSpace(invMatrix.matrix);
 
   UsdImagingGLEngine::RenderParams params;
-
-  GLuint glHitRecord;
-  view.beginSelect(&glHitRecord, 1);
-  glGetDoublev(GL_MODELVIEW_MATRIX, viewMatrix[0]);
-  glGetDoublev(GL_PROJECTION_MATRIX, projectionMatrix[0]);
-  view.endSelect();
 
   auto* proxyShape = static_cast<ProxyShape*>(getShape(objPath));
   auto engine = proxyShape->engine();
@@ -588,9 +601,8 @@ bool ProxyDrawOverride::userSelect(
   if (resolution < 10) { resolution = 10; }
   if (resolution > 1024) { resolution = 1024; }
 
-
   bool hitSelected = engine->TestIntersectionBatch(
-          GfMatrix4d(viewMatrix.matrix),
+          GfMatrix4d(worldViewMatrix.matrix),
           GfMatrix4d(projectionMatrix.matrix),
           worldToLocalSpace,
           rootPath,
@@ -705,7 +717,7 @@ bool ProxyDrawOverride::userSelect(
         if (hitBatch.size() > 1)
         {
           MDagPath cameraPath;
-          view.getCamera(cameraPath);
+          M3dView::active3dView().getCamera(cameraPath);
           const auto cameraPoint = cameraPath.inclusiveMatrix() * MPoint(0.0, 0.0, 0.0, 1.0);
           auto distanceToCameraSq = [&cameraPoint] (UsdImagingGLEngine::HitBatch::const_reference& it) -> double
           {
