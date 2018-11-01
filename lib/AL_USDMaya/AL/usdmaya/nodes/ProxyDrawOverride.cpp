@@ -79,7 +79,6 @@ ProxyDrawOverride::ProxyDrawOverride(const MObject& obj)
 #else
   : MHWRender::MPxDrawOverride(obj, draw)
 #endif
-  , fSelectionListAdjustmentMode(MGlobal::kReplaceList)
 {
   TF_DEBUG(ALUSDMAYA_DRAW).Msg("ProxyDrawOverride::ProxyDrawOverride\n");
 }
@@ -493,52 +492,6 @@ SdfPathVector ProxyDrawOverrideSelectionHelper::m_paths;
 
 #if MAYA_API_VERSION >= 20190000
 //----------------------------------------------------------------------------------------------------------------------
-// Maya calls this function during the pre-filtering phase of Viewport 2.0 selection
-// in order to setup the selection context of the given DAG object.
-//
-// However, we override this function for a different purpose, i.e. to clear the
-// Ufe::GlobalSelection in advance if we are going to replace the selection list.
-// Later if the bounds of the proxy shape passes the selection region culling
-// test, userSelect() will be called and we will add new hit paths; otherwise
-// userSelect() will not be called and we can de-select USD objects.
-//
-void ProxyDrawOverride::updateSelectionGranularity(
-  const MDagPath& path,
-  MSelectionContext& selectionContext)
-{
-  // Maya determines the selection list adjustment mode by Ctrl/Shift modifiers.
-  int modifiers = 0;
-  MGlobal::executeCommand("getModifiers", modifiers);
-
-  const bool shiftHeld = (modifiers % 2);
-  const bool ctrlHeld = (modifiers / 4 % 2);
-
-  if (shiftHeld && ctrlHeld)
-  {
-    fSelectionListAdjustmentMode = MGlobal::kAddToList;
-  }
-  else if (ctrlHeld)
-  {
-    fSelectionListAdjustmentMode = MGlobal::kRemoveFromList;
-  }
-  else if (shiftHeld)
-  {
-    fSelectionListAdjustmentMode = MGlobal::kXORWithList;
-  }
-  else
-  {
-    fSelectionListAdjustmentMode = MGlobal::kReplaceList;
-
-#if defined(WANT_UFE_BUILD)
-    if (ArchHasEnv("MAYA_WANT_UFE_SELECTION"))
-    {
-      Ufe::GlobalSelection::get()->clear();
-    }
-#endif
-  }
-}
-
-//----------------------------------------------------------------------------------------------------------------------
 bool ProxyDrawOverride::userSelect(
     const MHWRender::MSelectionInfo& selectInfo,
     const MHWRender::MDrawContext& context,
@@ -651,7 +604,27 @@ bool ProxyDrawOverride::userSelect(
       }
     }
   };
-  
+
+  // Maya determines the selection list adjustment mode by Ctrl/Shift modifiers.
+  int modifiers = 0;
+  MGlobal::executeCommand("getModifiers", modifiers);
+
+  const bool shiftHeld = (modifiers % 2);
+  const bool ctrlHeld = (modifiers / 4 % 2);
+
+  MGlobal::ListAdjustment listAdjustment = MGlobal::kReplaceList;
+  if (shiftHeld && ctrlHeld)
+  {
+    listAdjustment = MGlobal::kAddToList;
+  }
+  else if (ctrlHeld)
+  {
+    listAdjustment = MGlobal::kRemoveFromList;
+  }
+  else if (shiftHeld)
+  {
+    listAdjustment = MGlobal::kXORWithList;
+  }
 
   // Currently we have two approaches to selection. One method works with undo (but does not
   // play nicely with maya geometry). The second method doesn't work with undo, but does play
@@ -662,7 +635,7 @@ bool ProxyDrawOverride::userSelect(
     if(hitSelected)
     {
       MString command = "AL_usdmaya_ProxyShapeSelect";
-      switch(fSelectionListAdjustmentMode)
+      switch(listAdjustment)
       {
       case MGlobal::kReplaceList: command += " -r"; break;
       case MGlobal::kRemoveFromList: command += " -d"; break;
@@ -772,11 +745,13 @@ bool ProxyDrawOverride::userSelect(
           // Create a sceneItem
           const Ufe::SceneItem::Ptr& si{ handler->createItem(proxyShape->ufePath() + ps_usd) };
 
-          switch (fSelectionListAdjustmentMode)
+          switch (listAdjustment)
           {
           case MGlobal::kReplaceList:
-            // The list has been cleared in earlier phase - updateSelectionGranularity(),
-            // therefore we can add the new hit paths directly.
+            // The list has been cleared before viewport selection runs, so we
+            // can add the new hits directly. UFE selection list is a superset
+            // of Maya selection list, calling clear()/replaceWith() on UFE
+            // selection list would clear Maya selection list.
             globalSelection->append(si);
             break;
           case MGlobal::kAddToList:
@@ -798,7 +773,7 @@ bool ProxyDrawOverride::userSelect(
     else
     {
 #endif
-      switch (fSelectionListAdjustmentMode)
+      switch (listAdjustment)
       {
       case MGlobal::kReplaceList:
       {
