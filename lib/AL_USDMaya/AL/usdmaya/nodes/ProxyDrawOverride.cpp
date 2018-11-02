@@ -502,6 +502,9 @@ bool ProxyDrawOverride::userSelect(
 {
   TF_DEBUG(ALUSDMAYA_SELECTION).Msg("ProxyDrawOverride::userSelect\n");
 
+  if (!selectInfo.selectable(MSelectionMask(ProxyShape::s_selectionMaskName)))
+    return false;
+
   MStatus status;
   MMatrix worldViewMatrix = context.getMatrix(
     MHWRender::MFrameContext::kWorldViewMtx, &status);
