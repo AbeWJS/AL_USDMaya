@@ -544,12 +544,6 @@ bool ProxyDrawOverride::userSelect(
 
   UsdImagingGLEngine::RenderParams params;
 
-  GLuint glHitRecord;
-  view.beginSelect(&glHitRecord, 1);
-  glGetDoublev(GL_MODELVIEW_MATRIX, viewMatrix[0]);
-  glGetDoublev(GL_PROJECTION_MATRIX, projectionMatrix[0]);
-  view.endSelect();
-
   auto* proxyShape = static_cast<ProxyShape*>(getShape(objPath));
   auto engine = proxyShape->engine();
   proxyShape->m_pleaseIgnoreSelection = true;
@@ -567,7 +561,7 @@ bool ProxyDrawOverride::userSelect(
 
 
   bool hitSelected = engine->TestIntersectionBatch(
-          GfMatrix4d(viewMatrix.matrix),
+          GfMatrix4d(worldViewMatrix.matrix),
           GfMatrix4d(projectionMatrix.matrix),
           worldToLocalSpace,
           rootPath,
@@ -702,7 +696,7 @@ bool ProxyDrawOverride::userSelect(
         if (hitBatch.size() > 1)
         {
           MDagPath cameraPath;
-          view.getCamera(cameraPath);
+          M3dView::active3dView().getCamera(cameraPath);
           const auto cameraPoint = cameraPath.inclusiveMatrix() * MPoint(0.0, 0.0, 0.0, 1.0);
           auto distanceToCameraSq = [&cameraPoint] (UsdImagingGLEngine::HitBatch::const_reference& it) -> double
           {
