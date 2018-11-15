@@ -170,7 +170,7 @@ void ProxyDrawOverride::draw(const MHWRender::MDrawContext& context, const MUser
   float clearCol[4];
   glGetFloatv(GL_COLOR_CLEAR_VALUE, clearCol);
 
-  const RenderUserData* ptr = (const RenderUserData*)data;
+  RenderUserData* ptr = (RenderUserData*)data;
   if(ptr && ptr->m_rootPrim)
   {
     MHWRender::MStateManager* stateManager = context.getStateManager();
@@ -385,6 +385,7 @@ void ProxyDrawOverride::draw(const MHWRender::MDrawContext& context, const MUser
 
     ptr->m_engine->SetRootTransform(GfMatrix4d(ptr->m_objPath.inclusiveMatrix().matrix));
 
+    auto view = M3dView::active3dView();
     const auto& paths1 = ptr->m_shape->selectedPaths();
     const auto& paths2 = ptr->m_shape->selectionList().paths();
     SdfPathVector combined;
@@ -395,6 +396,7 @@ void ProxyDrawOverride::draw(const MHWRender::MDrawContext& context, const MUser
     ptr->m_engine->SetSelected(combined);
     ptr->m_engine->SetSelectionColor(GfVec4f(1.0f, 2.0f/3.0f, 0.0f, 1.0f));
 
+    ptr->m_params.frame = ptr->m_shape->outTimePlug().asMTime().as(MTime::uiUnit());
     if(combined.size())
     {
       UsdImagingGLEngine::RenderParams params = ptr->m_params;
@@ -556,6 +558,7 @@ bool ProxyDrawOverride::userSelect(
   MGlobal::getOptionVarValue("AL_usdmaya_selectResolution", resolution);
   if (resolution < 10) { resolution = 10; }
   if (resolution > 1024) { resolution = 1024; }
+
 
   bool hitSelected = engine->TestIntersectionBatch(
           GfMatrix4d(worldViewMatrix.matrix),
@@ -813,8 +816,8 @@ bool ProxyDrawOverride::userSelect(
       }
       break;
 
-      case MGlobal::kAddToHeadOfList:
-      case MGlobal::kAddToList:
+    case MGlobal::kAddToHeadOfList:
+    case MGlobal::kAddToList:
       {
         MString command;
         if(paths.size())
@@ -840,7 +843,7 @@ bool ProxyDrawOverride::userSelect(
       }
       break;
 
-      case MGlobal::kRemoveFromList:
+    case MGlobal::kRemoveFromList:
       {
         if(!proxyShape->selectedPaths().empty() && paths.size())
         {
@@ -861,7 +864,7 @@ bool ProxyDrawOverride::userSelect(
       }
       break;
 
-      case MGlobal::kXORWithList:
+    case MGlobal::kXORWithList:
       {
         auto& slpaths = proxyShape->selectedPaths();
         bool hasSelectedItems = false;
