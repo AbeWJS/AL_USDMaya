@@ -170,7 +170,7 @@ void ProxyDrawOverride::draw(const MHWRender::MDrawContext& context, const MUser
   float clearCol[4];
   glGetFloatv(GL_COLOR_CLEAR_VALUE, clearCol);
 
-  const RenderUserData* ptr = (const RenderUserData*)data;
+  RenderUserData* ptr = (RenderUserData*)data;
   if(ptr && ptr->m_rootPrim)
   {
     MHWRender::MStateManager* stateManager = context.getStateManager();
@@ -385,6 +385,7 @@ void ProxyDrawOverride::draw(const MHWRender::MDrawContext& context, const MUser
 
     ptr->m_engine->SetRootTransform(GfMatrix4d(ptr->m_objPath.inclusiveMatrix().matrix));
 
+    auto view = M3dView::active3dView();
     const auto& paths1 = ptr->m_shape->selectedPaths();
     const auto& paths2 = ptr->m_shape->selectionList().paths();
     SdfPathVector combined;
@@ -395,6 +396,7 @@ void ProxyDrawOverride::draw(const MHWRender::MDrawContext& context, const MUser
     ptr->m_engine->SetSelected(combined);
     ptr->m_engine->SetSelectionColor(GfVec4f(1.0f, 2.0f/3.0f, 0.0f, 1.0f));
 
+    ptr->m_params.frame = ptr->m_shape->outTimePlug().asMTime().as(MTime::uiUnit());
     if(combined.size())
     {
       UsdImagingGLEngine::RenderParams params = ptr->m_params;
@@ -542,6 +544,12 @@ bool ProxyDrawOverride::userSelect(
 
   UsdImagingGLEngine::RenderParams params;
 
+  GLuint glHitRecord;
+  view.beginSelect(&glHitRecord, 1);
+  glGetDoublev(GL_MODELVIEW_MATRIX, viewMatrix[0]);
+  glGetDoublev(GL_PROJECTION_MATRIX, projectionMatrix[0]);
+  view.endSelect();
+
   auto* proxyShape = static_cast<ProxyShape*>(getShape(objPath));
   auto engine = proxyShape->engine();
   proxyShape->m_pleaseIgnoreSelection = true;
@@ -557,8 +565,9 @@ bool ProxyDrawOverride::userSelect(
   if (resolution < 10) { resolution = 10; }
   if (resolution > 1024) { resolution = 1024; }
 
+
   bool hitSelected = engine->TestIntersectionBatch(
-          GfMatrix4d(worldViewMatrix.matrix),
+          GfMatrix4d(viewMatrix.matrix),
           GfMatrix4d(projectionMatrix.matrix),
           worldToLocalSpace,
           rootPath,
@@ -693,7 +702,7 @@ bool ProxyDrawOverride::userSelect(
         if (hitBatch.size() > 1)
         {
           MDagPath cameraPath;
-          M3dView::active3dView().getCamera(cameraPath);
+          view.getCamera(cameraPath);
           const auto cameraPoint = cameraPath.inclusiveMatrix() * MPoint(0.0, 0.0, 0.0, 1.0);
           auto distanceToCameraSq = [&cameraPoint] (UsdImagingGLEngine::HitBatch::const_reference& it) -> double
           {
@@ -813,8 +822,8 @@ bool ProxyDrawOverride::userSelect(
       }
       break;
 
-      case MGlobal::kAddToHeadOfList:
-      case MGlobal::kAddToList:
+    case MGlobal::kAddToHeadOfList:
+    case MGlobal::kAddToList:
       {
         MString command;
         if(paths.size())
@@ -840,7 +849,7 @@ bool ProxyDrawOverride::userSelect(
       }
       break;
 
-      case MGlobal::kRemoveFromList:
+    case MGlobal::kRemoveFromList:
       {
         if(!proxyShape->selectedPaths().empty() && paths.size())
         {
@@ -861,7 +870,7 @@ bool ProxyDrawOverride::userSelect(
       }
       break;
 
-      case MGlobal::kXORWithList:
+    case MGlobal::kXORWithList:
       {
         auto& slpaths = proxyShape->selectedPaths();
         bool hasSelectedItems = false;
