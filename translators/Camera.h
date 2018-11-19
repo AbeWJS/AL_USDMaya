@@ -54,7 +54,6 @@ protected:
   AL_USDMAYA_PUBLIC virtual void writePrim(UsdPrim &prim, MDagPath dagPath, const ExporterParams& params);
 
 private:
-  MStatus updateAttributes(MObject to, UsdGeomCamera& usdCamera);
   static MObject m_orthographic;
   static MObject m_horizontalFilmAperture;
   static MObject m_verticalFilmAperture;
